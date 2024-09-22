@@ -1,1 +1,1 @@
-A tool to watch PRs 
+An opinionated tool to monitor GH activity
