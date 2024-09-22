@@ -2,13 +2,20 @@ from datetime import datetime, timedelta
 
 import requests
 
-from github_watcher.objects import PRState, PullRequest
+from cache import Cache
+from github_watcher.objects import PRState, PullRequest, TimelineEvent
 
 DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
 
 class GitHubPRs:
-    def __init__(self, token, base_url="https://api.github.com", recency_threshold=timedelta(days=1)):
+    def __init__(
+            self,
+            token,
+            base_url="https://api.github.com",
+            recency_threshold=timedelta(days=1),
+            cache_dir=".cache"
+    ):
         self.token = token
         self.base_url = base_url
         self.headers = {
@@ -16,6 +23,7 @@ class GitHubPRs:
             "Accept": "application/vnd.github.v3+json"
         }
         self.recency_threshold = recency_threshold
+        self.cache = Cache(cache_dir)
 
     def get_prs(
             self,
@@ -41,7 +49,14 @@ class GitHubPRs:
         if is_draft is not None:
             query += f" draft:{str(is_draft).lower()}"
 
-        return self._search_issues_by_users(query, users, max_results)
+        cache_key = f"prs_{state}_{is_draft}_{'-'.join(sorted(users))}_{max_results}"
+        cached_result = self.cache.get(cache_key)
+        if cached_result:
+            return cached_result
+
+        result = self._search_issues_by_users(query, users, max_results)
+        self.cache.set(cache_key, result)
+        return result
 
     def get_recently_closed_prs_by_users(self, users, max_results=None) -> dict[str, list[PullRequest]]:
         """
@@ -54,7 +69,14 @@ class GitHubPRs:
         date_threshold = (datetime.now() - self.recency_threshold).strftime("%Y-%m-%d")
         query = f"is:pr is:closed closed:>={date_threshold}"
 
-        return self._search_issues_by_users(query, users, max_results)
+        cache_key = f"recently_closed_prs_{'-'.join(sorted(users))}_{max_results}"
+        cached_result = self.cache.get(cache_key)
+        if cached_result:
+            return cached_result
+
+        result = self._search_issues_by_users(query, users, max_results)
+        self.cache.set(cache_key, result)
+        return result
 
     def get_prs_that_await_review(self, users=None, max_results=None) -> dict[str, list[PullRequest]]:
         """
@@ -66,7 +88,14 @@ class GitHubPRs:
         """
         query = "is:pr is:open review:none"
 
-        return self._search_issues_by_users(query, users, max_results)
+        cache_key = f"await_review_prs_{'-'.join(sorted(users) if users else [])}_{max_results}"
+        cached_result = self.cache.get(cache_key)
+        if cached_result:
+            return cached_result
+
+        result = self._search_issues_by_users(query, users, max_results)
+        self.cache.set(cache_key, result)
+        return result
 
     def get_prs_that_need_attention(
             self, users=None, max_results=None
@@ -84,7 +113,14 @@ class GitHubPRs:
         is_not_draft = "-is:draft"
         query = f"is:pr is:open ({not_recently_updated} OR  {recently_created}) {is_not_draft}))"
 
-        return self._search_issues_by_users(query, users, max_results)
+        cache_key = f"need_attention_prs_{'-'.join(sorted(users) if users else [])}_{max_results}"
+        cached_result = self.cache.get(cache_key)
+        if cached_result:
+            return cached_result
+
+        result = self._search_issues_by_users(query, users, max_results)
+        self.cache.set(cache_key, result)
+        return result
 
     def get_pr_timeline(self, repo_owner, repo_name, pr_number):
         """
@@ -95,6 +131,11 @@ class GitHubPRs:
         :param pr_number: Number of the Pull Request
         :return: List of TimelineEvent objects
         """
+        cache_key = f"timeline_{repo_owner}_{repo_name}_{pr_number}"
+        cached_result = self.cache.get(cache_key)
+        if cached_result:
+            return cached_result
+
         endpoint = f"/repos/{repo_owner}/{repo_name}/issues/{pr_number}/timeline"
         params = {"per_page": 100}
         events = []
@@ -110,6 +151,7 @@ class GitHubPRs:
 
             params['page'] = response.links['next']['url'].split('page=')[-1]
 
+        self.cache.set(cache_key, events)
         return events
 
     def _search_issues_by_users(self, base_query, users=None, max_results=None) -> dict[str, list[PullRequest]]:
@@ -146,6 +188,10 @@ class GitHubPRs:
         :param max_results: Maximum number of results to return
         :return: List of matching pull requests
         """
+        cache_key = f"search_{query}_{max_results}"
+        cached_result = self.cache.get(cache_key)
+        if cached_result:
+            return [PullRequest.parse_pr(pr_data) for pr_data in cached_result]
 
         endpoint = "/search/issues"
         params = {"q": query, "per_page": 100}
@@ -158,13 +204,15 @@ class GitHubPRs:
             results.extend(PullRequest.parse_prs(data['items']))
 
             if max_results and len(results) >= max_results:
-                return results[:max_results]
+                results = results[:max_results]
+                break
 
             if 'next' not in response.links:
                 break
 
             params['page'] = response.links['next']['url'].split('page=')[-1]
 
+        self.cache.set(cache_key, [pr.to_dict() for pr in results])
         return results
 
     def _recently_lower_bound(self):

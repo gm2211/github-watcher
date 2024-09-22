@@ -1,6 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime
-
 from enum import Enum
 from typing import List, Optional
 
@@ -10,6 +9,9 @@ class User:
     login: str
     id: int
     avatar_url: str
+
+    def to_dict(self):
+        return asdict(self)
 
 
 class TimelineEventType(Enum):
@@ -33,6 +35,17 @@ class TimelineEvent:
     event: TimelineEventType
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'node_id': self.node_id,
+            'url': self.url,
+            'actor': self.actor.to_dict(),
+            'event': self.event.value,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
 
     @staticmethod
     def parse_event(event_data: dict) -> 'TimelineEvent':
@@ -71,6 +84,17 @@ class PullRequest:
     user: User
     html_url: str
     timeline: Optional[List[TimelineEvent]] = None
+
+    def to_dict(self):
+        pr_dict = asdict(self)
+        pr_dict['user'] = self.user.to_dict()
+        pr_dict['created_at'] = self.created_at
+        pr_dict['updated_at'] = self.updated_at
+        pr_dict['closed_at'] = self.closed_at
+        pr_dict['merged_at'] = self.merged_at
+        if self.timeline:
+            pr_dict['timeline'] = [event.to_dict() for event in self.timeline]
+        return pr_dict
 
     def fetch_timeline(self, github_prs: 'GitHubPRs'):
         repo_owner, repo_name = self.html_url.split('/')[3:5]
