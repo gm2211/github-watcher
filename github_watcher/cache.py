@@ -23,11 +23,12 @@ class Cache:
         self.cache_expiration = cache_expiration
         os.makedirs(cache_dir, exist_ok=True)
 
-    def _hash_key(self, key):
+    @staticmethod
+    def _hash_key(key):
         return xxhash.xxh64(key.encode()).hexdigest()
 
     def get(self, key):
-        hashed_key = self._hash_key(key)
+        hashed_key = Cache._hash_key(key)
         file_path = os.path.join(self.cache_dir, f"{hashed_key}.json")
         if os.path.exists(file_path):
             try:
@@ -46,7 +47,7 @@ class Cache:
 
     def set(self, key, value):
         self.cleanup_expired_files()
-        hashed_key = self._hash_key(key)
+        hashed_key = Cache._hash_key(key)
         file_path = os.path.join(self.cache_dir, f"{hashed_key}.json")
         with open(file_path, 'w') as f:
             json.dump(
