@@ -1,2 +1,6 @@
+__pycache__
+dist/
 .DS_Store
 .idea
+users.txt
+run.env
