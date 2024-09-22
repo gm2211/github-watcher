@@ -21,6 +21,9 @@ def kill_notifier():
     tell_app(NOTIFIER_APP, 'quit')
 
 
+# Always register the kill_notifier function to run when the script exits
+atexit.register(kill_notifier)
+
 # Example usage
 if __name__ == "__main__":
     is_macos = platform.system() == 'Darwin'
@@ -28,8 +31,4 @@ if __name__ == "__main__":
         logging.warning("Notifications are only supported on macOS.")
         sys.exit(-1)
 
-    notify(NOTIFIER_APP, "Hello", "This is a notification")
-
-    atexit.register(kill_notifier)
-
-    time.sleep(1000)
+    notify(NOTIFIER_APP, "Test", "This is a test notification")
