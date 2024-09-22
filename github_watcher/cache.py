@@ -1,5 +1,6 @@
 import json
 import os
+import xxhash
 from datetime import datetime, timedelta
 from github_watcher.objects import PullRequest, User, TimelineEvent
 from enum import Enum
@@ -22,13 +23,17 @@ class Cache:
         self.cache_expiration = cache_expiration
         os.makedirs(cache_dir, exist_ok=True)
 
+    def _hash_key(self, key):
+        return xxhash.xxh64(key.encode()).hexdigest()
+
     def get(self, key):
-        file_path = os.path.join(self.cache_dir, f"{key}.json")
+        hashed_key = self._hash_key(key)
+        file_path = os.path.join(self.cache_dir, f"{hashed_key}.json")
         if os.path.exists(file_path):
             try:
                 with open(file_path, 'r') as f:
                     data = json.load(f)
-                    time_since_write_to_cache = datetime.now() - datetime.fromisoformat(data['timestamp'])
+                    time_since_write_to_cache = datetime.now() - datetime.fromisoformat(data['cache_write_at'])
                     if time_since_write_to_cache < self.cache_expiration:
                         return data['value']
             except json.JSONDecodeError:
@@ -41,9 +46,16 @@ class Cache:
 
     def set(self, key, value):
         self.cleanup_expired_files()
-        file_path = os.path.join(self.cache_dir, f"{key}.json")
+        hashed_key = self._hash_key(key)
+        file_path = os.path.join(self.cache_dir, f"{hashed_key}.json")
         with open(file_path, 'w') as f:
-            json.dump({'timestamp': datetime.now().isoformat(), 'value': value}, f, cls=CustomJSONEncoder)
+            json.dump(
+                {
+                    'cache_write_at': datetime.now().isoformat(),
+                    'query': key,
+                    'value': value
+                }, f, cls=CustomJSONEncoder
+            )
 
     def cleanup_expired_files(self):
         current_time = datetime.now()
@@ -53,7 +65,7 @@ class Cache:
                 try:
                     with open(file_path, 'r') as f:
                         data = json.load(f)
-                        file_timestamp = datetime.fromisoformat(data['timestamp'])
+                        file_timestamp = datetime.fromisoformat(data['cache_write_at'])
                         if current_time - file_timestamp > self.cache_expiration:
                             os.remove(file_path)
                 except (json.JSONDecodeError, KeyError, ValueError):
