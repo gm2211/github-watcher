@@ -67,17 +67,45 @@ class GitHubPRs:
 
         return self._search_issues_by_users(query, users, max_results)
 
+    def get_recently_merged_prs_by_users(self, users, max_results=None) -> dict[str, list[PullRequest]]:
+        """
+        Get recently merged PRs for specific users across all accessible repositories.
+
+        :param users: List of usernames
+        :param max_results: Maximum number of PRs to return per user
+        :return: Dictionary of users and their recently merged PRs
+        """
+        date_threshold = (datetime.now() - self.recency_threshold).strftime("%Y-%m-%d")
+        query = f"is:pr is:merged merged:>={date_threshold}"
+
+        return self._search_issues_by_users(query, users, max_results)
+
     def get_prs_that_await_review(self, users=None, max_results=None) -> dict[str, list[PullRequest]]:
         """
-        Get PRs that need review based on review status across all accessible repositories.
+        Get PRs that need review based on review status and lack of comments across all accessible repositories.
 
         :param users: List of usernames to filter by
         :param max_results: Maximum number of PRs to return per user
         :return: Dictionary of users and their PRs awaiting review
         """
-        query = "is:pr is:open review:none"
+        query = "is:pr is:open review:none comments:0"
 
-        return self._search_issues_by_users(query, users, max_results)
+        prs = self._search_issues_by_users(query, users, max_results)
+
+        # Filter out PRs with automated comments
+        filtered_prs = {}
+        for user, user_prs in prs.items():
+            filtered_user_prs = []
+            for pr in user_prs:
+                timeline = self.get_pr_timeline(pr.repo_owner, pr.repo_name, pr.number)
+                if not any(
+                        event.eventType is None or event.eventType == "commented" and not event.is_bot
+                        for event in timeline
+                ):
+                    filtered_user_prs.append(pr)
+            filtered_prs[user] = filtered_user_prs
+
+        return filtered_prs
 
     def get_prs_that_need_attention(
             self, users=None, max_results=None
@@ -97,7 +125,7 @@ class GitHubPRs:
 
         return self._search_issues_by_users(query, users, max_results)
 
-    def get_pr_timeline(self, repo_owner, repo_name, pr_number):
+    def get_pr_timeline(self, repo_owner, repo_name, pr_number) -> list[TimelineEvent]:
         """
         Fetch the timeline of a specific Pull Request.
 

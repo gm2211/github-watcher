@@ -8,10 +8,43 @@ from typing import List, Optional
 class User:
     login: str
     id: int
+    type: str
+    site_admin: bool
     avatar_url: str
+    url: str
 
     def to_dict(self):
         return asdict(self)
+
+    @staticmethod
+    def parse(user_data):
+        user = User(
+            login=user_data['login'],
+            id=user_data['id'],
+            type=user_data['type'],
+            site_admin=user_data['site_admin'],
+            avatar_url=user_data['avatar_url'],
+            url=user_data['url']
+        )
+        return user
+
+
+@dataclass
+class Author:
+    name: str
+    email: str
+    date: datetime
+
+    def to_dict(self):
+        return asdict(self)
+
+    @staticmethod
+    def parse(author_data):
+        return Author(
+            name=author_data['name'],
+            email=author_data['email'],
+            date=datetime.fromisoformat(author_data['date'])
+        )
 
 
 class TimelineEventType(Enum):
@@ -31,39 +64,37 @@ class TimelineEvent:
     id: int
     node_id: str
     url: str
-    actor: User
-    event: TimelineEventType
-    created_at: datetime
+    author: User | Author
+    eventType: Optional[TimelineEventType] = None
+    created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     def to_dict(self):
-        return {
-            'id': self.id,
-            'node_id': self.node_id,
-            'url': self.url,
-            'actor': self.actor.to_dict(),
-            'event': self.event.value,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None
-        }
+        return asdict(self)
 
     @staticmethod
-    def parse_event(event_data: dict) -> 'TimelineEvent':
-        return TimelineEvent(
-            id=event_data['id'],
-            node_id=event_data['node_id'],
-            url=event_data['url'],
-            actor=User(
-                login=event_data['actor']['login'],
-                id=event_data['actor']['id'],
-                avatar_url=event_data['actor']['avatar_url']
-            ),
-            event=TimelineEventType(event_data['event']),
-            created_at=datetime.fromisoformat(event_data['created_at'].replace('Z', '+00:00')),
-            updated_at=datetime.fromisoformat(event_data['updated_at'].replace('Z', '+00:00')) if event_data.get(
-                'updated_at'
-            ) else None
-        )
+    def parse_event(event_data: dict) -> Optional['TimelineEvent']:
+        def parse_datetime(field):
+            return datetime.fromisoformat(field.replace('Z', '+00:00'))
+
+        try:
+            author = Author.parse(event_data['author']) if event_data.get('author') else User.parse(event_data['actor'])
+            return TimelineEvent(
+                id=event_data['sha'] if event_data.get('sha') else event_data['id'],
+                node_id=event_data['node_id'],
+                url=event_data['url'],
+                author=author,
+                eventType=TimelineEventType(event_data['event']) if event_data.get('event') else None,
+                created_at=parse_datetime(event_data['created_at']) if event_data.get('created_at') else None,
+                updated_at=parse_datetime(event_data['updated_at']) if event_data.get('updated_at') else None
+            )
+        except KeyError as e:
+            print(f"Error: Missing required key in event_data: {e}, event_data: {event_data}")
+        except ValueError as e:
+            print(f"Error: Invalid data format in event_data: {e}, event_data: {event_data}")
+        except Exception as e:
+            print(f"Unexpected error occurred while parsing event: {e}, event_data: {event_data}")
+        return None
 
     @staticmethod
     def parse_events(events_data: list) -> List['TimelineEvent']:
@@ -83,22 +114,15 @@ class PullRequest:
     draft: bool
     user: User
     html_url: str
+    repo_owner: str
+    repo_name: str
     timeline: Optional[List[TimelineEvent]] = None
 
     def to_dict(self):
-        pr_dict = asdict(self)
-        pr_dict['user'] = self.user.to_dict()
-        pr_dict['created_at'] = self.created_at
-        pr_dict['updated_at'] = self.updated_at
-        pr_dict['closed_at'] = self.closed_at
-        pr_dict['merged_at'] = self.merged_at
-        if self.timeline:
-            pr_dict['timeline'] = [event.to_dict() for event in self.timeline]
-        return pr_dict
+        return asdict(self)
 
     def fetch_timeline(self, github_prs: 'GitHubPRs'):
-        repo_owner, repo_name = self.html_url.split('/')[3:5]
-        self.timeline = github_prs.get_pr_timeline(repo_owner, repo_name, self.number)
+        self.timeline = github_prs.get_pr_timeline(self.repo_owner, self.repo_name, self.number)
 
     @staticmethod
     def parse_pr(pr_data: dict) -> 'PullRequest':
@@ -112,12 +136,10 @@ class PullRequest:
             closed_at=pr_data.get('closed_at'),
             merged_at=pr_data.get('merged_at'),
             draft=pr_data['draft'],
-            user=User(
-                login=pr_data['user']['login'],
-                id=pr_data['user']['id'],
-                avatar_url=pr_data['user']['avatar_url']
-            ),
-            html_url=pr_data['html_url']
+            user=User.parse(pr_data['user']),
+            html_url=pr_data['html_url'],
+            repo_owner=pr_data['html_url'].split('/')[3],
+            repo_name=pr_data['html_url'].split('/')[4]
         )
 
     @staticmethod
