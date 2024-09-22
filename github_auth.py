@@ -1,11 +1,20 @@
-# github_auth.py
-
 import subprocess
 import webbrowser
 import sys
+from urllib.parse import urlencode
 
-KEYCHAIN_SERVICE = 'GithubAPIKey'
-KEYCHAIN_ACCOUNT = 'github_api'
+KEYCHAIN_SERVICE = 'github_api_key'
+KEYCHAIN_ACCOUNT = 'token'
+
+# Define the required permissions
+REQUIRED_SCOPES = [
+    'repo',
+    'read:org',
+    'read:user',
+    'read:project',
+    'read:discussion',
+    'read:packages'
+]
 
 
 def get_github_api_key():
@@ -14,7 +23,7 @@ def get_github_api_key():
         result = subprocess.run(
             ['security', 'find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT, '-w'],
             capture_output=True, text=True, check=True
-            )
+        )
         return result.stdout.strip()
     except subprocess.CalledProcessError:
         # If the key is not found, prompt the user to create one
@@ -22,7 +31,15 @@ def get_github_api_key():
         create_new_key = input("Would you like to create a new API key? (y/n): ").lower()
 
         if create_new_key == 'y':
-            webbrowser.open('https://github.com/settings/tokens/new')
+            # Construct the URL with preset permissions
+            base_url = 'https://github.com/settings/tokens/new'
+            params = {
+                'description': 'GitHub Watcher API Key',
+                'scopes': ','.join(REQUIRED_SCOPES)
+            }
+            url = f"{base_url}?{urlencode(params)}"
+
+            webbrowser.open(url)
             api_key = input("Please enter your new GitHub API key: ")
 
             # Store the new API key in Keychain
@@ -30,7 +47,7 @@ def get_github_api_key():
                 subprocess.run(
                     ['security', 'add-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT, '-w', api_key],
                     check=True
-                    )
+                )
                 print("API key stored successfully in Keychain.")
                 return api_key
             except subprocess.CalledProcessError:
@@ -43,4 +60,4 @@ def get_github_api_key():
 
 if __name__ == "__main__":
     api_key = get_github_api_key()
-    print(f"GitHub API Key: {api_key}")
+    print("GitHub API Key retrieved successfully.")
