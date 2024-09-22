@@ -4,7 +4,7 @@ import re
 import requests
 
 from github_watcher.cache import Cache
-from github_watcher.objects import PRState, PullRequest, TimelineEvent
+from github_watcher.objects import PRState, PullRequest, TimelineEvent, TimelineEventType
 
 DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -81,25 +81,24 @@ class GitHubPRs:
         return self._search_issues_by_users(query, users, max_results)
 
     def get_prs_that_await_review(self, users=None, max_results=None) -> dict[str, list[PullRequest]]:
-        """
-        Get PRs that need review based on review status and lack of comments across all accessible repositories.
-
-        :param users: List of usernames to filter by
-        :param max_results: Maximum number of PRs to return per user
-        :return: Dictionary of users and their PRs awaiting review
-        """
         query = "is:pr is:open review:none comments:0"
 
         prs = self._search_issues_by_users(query, users, max_results)
 
-        # Filter out PRs with automated comments
         filtered_prs = {}
         for user, user_prs in prs.items():
             filtered_user_prs = []
             for pr in user_prs:
                 timeline = self.get_pr_timeline(pr.repo_owner, pr.repo_name, pr.number)
                 if not any(
-                        event.eventType is None or event.eventType == "commented" and not event.is_bot
+                        (isinstance(event, dict) and event.get('event') == 'commented' and not event.get(
+                            'is_bot',
+                            False
+                        )) or
+                        (isinstance(
+                            event,
+                            TimelineEvent
+                        ) and event.eventType == TimelineEventType.COMMENTED and not getattr(event, 'is_bot', False))
                         for event in timeline
                 ):
                     filtered_user_prs.append(pr)
@@ -138,7 +137,7 @@ class GitHubPRs:
         bucket_name = "pr_timeline"
         cached_result = self.cache.get(cache_key, bucket_name)
         if cached_result:
-            return cached_result
+            return [TimelineEvent.from_dict(event_data) for event_data in cached_result]
 
         endpoint = f"/repos/{repo_owner}/{repo_name}/issues/{pr_number}/timeline"
         params = {"per_page": 100}
@@ -155,18 +154,10 @@ class GitHubPRs:
 
             params['page'] = response.links['next']['url'].split('page=')[-1]
 
-        self.cache.set(cache_key, events, bucket_name)
+        self.cache.set(cache_key, [event.to_dict() for event in events], bucket_name)
         return events
 
     def _search_issues_by_users(self, base_query, users=None, max_results=None) -> dict[str, list[PullRequest]]:
-        """
-        Search issues and pull requests using the given query, grouped by users.
-
-        :param base_query: Base search query string
-        :param users: List of usernames to filter by
-        :param max_results: Maximum number of results to return per user
-        :return: Dictionary of users and their matching pull requests
-        """
         normalized_query = self._normalize_query(base_query)
         cache_key = f"search_issues_by_users_{normalized_query}_{'-'.join(sorted(users) if users else [])}_{max_results}"
         bucket_name = "search_issues"
@@ -184,7 +175,7 @@ class GitHubPRs:
         else:
             all_results = self._search_issues(base_query, max_results)
             for pr in all_results:
-                user = pr.user
+                user = pr.user.login
                 if user not in results:
                     results[user] = []
                 results[user].append(pr)

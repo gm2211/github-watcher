@@ -72,6 +72,27 @@ class TimelineEvent:
     def to_dict(self):
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, data: dict) -> 'TimelineEvent':
+        author_data = data.get('author') or data.get('actor')
+        author = Author.parse(author_data) if isinstance(author_data, dict) and 'email' in author_data else User.parse(
+            author_data
+            )
+
+        return cls(
+            id=data.get('sha') or data.get('id'),
+            node_id=data.get('node_id'),
+            url=data.get('url'),
+            author=author,
+            eventType=TimelineEventType(data.get('event')) if data.get('event') else None,
+            created_at=datetime.fromisoformat(data['created_at'].replace('Z', '+00:00')) if data.get(
+                'created_at'
+                ) else None,
+            updated_at=datetime.fromisoformat(data['updated_at'].replace('Z', '+00:00')) if data.get(
+                'updated_at'
+                ) else None
+        )
+
     @staticmethod
     def parse_event(event_data: dict) -> Optional['TimelineEvent']:
         def parse_datetime(field):
