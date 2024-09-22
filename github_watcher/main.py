@@ -1,8 +1,9 @@
-# main.py
-
 import os
-from notifications import notify, NOTIFIER_APP
-from github_prs import get_user_prs
+
+from github_auth import get_github_api_key
+from github_prs import GitHubPRs
+from notifications import NOTIFIER_APP, notify
+from objects import PullRequest
 
 
 def read_users_from_file():
@@ -30,9 +31,20 @@ if __name__ == "__main__":
         print("No users found. Please check your GITHUB_USERS_FILE.")
     else:
         for username in users:
-            prs = get_user_prs(username)
-            if prs:
-                pr_count = len(prs)
-                notify(NOTIFIER_APP, "GitHub PRs", f"{username} has {pr_count} open pull requests.")
-            else:
-                notify(NOTIFIER_APP, "GitHub PRs", f"Failed to fetch PRs for {username}.")
+            github_token = get_github_api_key()
+            github_prs: GitHubPRs = GitHubPRs(github_token)
+
+            # Get open, non-draft PRs across all repos (max 100 PRs)
+            open_prs = github_prs.get_prs(state="open", is_draft=False, max_results=100)
+
+            # Get recently closed PRs by specific users (max 100 PRs)
+            closed_prs = github_prs.get_recently_closed_prs_by_users([username], max_results=100)
+
+            # Get PRs awaiting review (max 50 PRs)
+            awaiting_review = github_prs.get_prs_that_await_review(max_results=50)
+
+            # Get PRs needing attention (max 75 PRs)
+            need_attention = github_prs.get_prs_that_need_attention(max_results=75)
+            pr: PullRequest
+            for pr in need_attention:
+                notify(NOTIFIER_APP, "GitHub PRs", f"{pr.number} for {username} needs attention.")
