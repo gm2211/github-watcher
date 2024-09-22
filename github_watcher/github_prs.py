@@ -2,88 +2,143 @@ from datetime import datetime, timedelta
 
 import requests
 
-from github_watcher.objects import PullRequest
+from github_watcher.objects import PRState, PullRequest
+
+DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
 
 class GitHubPRs:
-    def __init__(self, token, base_url="https://api.github.com"):
+    def __init__(self, token, base_url="https://api.github.com", recency_threshold=timedelta(days=1)):
         self.token = token
         self.base_url = base_url
         self.headers = {
             "Authorization": f"token {self.token}",
             "Accept": "application/vnd.github.v3+json"
         }
+        self.recency_threshold = recency_threshold
 
-    def get_prs(self, state="open", is_draft=None, max_results=None) -> list[PullRequest]:
-
+    def get_prs(
+            self,
+            state: PRState = None,
+            is_draft=False,
+            users=None,
+            max_results=100
+    ) -> dict[str, list[PullRequest]]:
         """
         Get pull requests across all accessible repositories with filtering options.
 
-        :param state: 'open' or 'closed'
+        :param state: PRState.OPEN, PRState.CLOSED, or None for both
         :param is_draft: True for draft PRs, False for non-draft, None for both
-        :param max_results: Maximum number of PRs to return
-        :return: List of pull requests
+        :param users: List of usernames to filter by
+        :param max_results: Maximum number of PRs to return per user
+        :return: Dictionary of users and their respective pull requests
         """
-        query = f"is:pr is:{state}"
+        if users is None:
+            users = []
+        query = "is:pr"
+        if state:
+            query += f" is:{state.value}"
         if is_draft is not None:
             query += f" draft:{str(is_draft).lower()}"
 
-        return self._search_issues(query, max_results)
+        return self._search_issues_by_users(query, users, max_results)
 
-    def get_prs(self, state="open", is_draft=None, max_results=None) -> list[PullRequest]:
-        """
-        Get pull requests across all accessible repositories with filtering options.
-
-        :param state: 'open' or 'closed'
-        :param is_draft: True for draft PRs, False for non-draft, None for both
-        :param max_results: Maximum number of PRs to return
-        :return: List of pull requests
-        """
-        query = f"is:pr is:{state}"
-        if is_draft is not None:
-            query += f" draft:{str(is_draft).lower()}"
-
-        return self._search_issues(query, max_results)
-
-    def get_recently_closed_prs_by_users(self, users, days=7, max_results=None):
+    def get_recently_closed_prs_by_users(self, users, max_results=None) -> dict[str, list[PullRequest]]:
         """
         Get recently closed PRs for specific users across all accessible repositories.
 
         :param users: List of usernames
-        :param days: Number of days to look back
-        :param max_results: Maximum number of PRs to return
-        :return: List of recently closed PRs by specified users
+        :param max_results: Maximum number of PRs to return per user
+        :return: Dictionary of users and their recently closed PRs
         """
-        date_threshold = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-        user_query = " ".join(f"author:{user}" for user in users)
-        query = f"is:pr is:closed closed:>={date_threshold} {user_query}"
+        date_threshold = (datetime.now() - self.recency_threshold).strftime("%Y-%m-%d")
+        query = f"is:pr is:closed closed:>={date_threshold}"
 
-        return self._search_issues(query, max_results)
+        return self._search_issues_by_users(query, users, max_results)
 
-    def get_prs_that_await_review(self, max_results=None):
+    def get_prs_that_await_review(self, users=None, max_results=None) -> dict[str, list[PullRequest]]:
         """
         Get PRs that need review based on review status across all accessible repositories.
 
-        :param max_results: Maximum number of PRs to return
-        :return: List of PRs awaiting review
+        :param users: List of usernames to filter by
+        :param max_results: Maximum number of PRs to return per user
+        :return: Dictionary of users and their PRs awaiting review
         """
         query = "is:pr is:open review:none"
-        return self._search_issues(query, max_results)
 
-    def get_prs_that_need_attention(self, days_inactive=7, max_results=None) -> list[PullRequest]:
-        """
-        Get PRs that have been open for a while without much activity across all accessible repositories.
+        return self._search_issues_by_users(query, users, max_results)
 
-        :param days_inactive: Number of days of inactivity to consider
-        :param max_results: Maximum number of PRs to return
-        :return: List of PRs needing attention
+    def get_prs_that_need_attention(
+            self, users=None, max_results=None
+    ) -> dict[str, list[PullRequest]]:
         """
-        date_threshold = (datetime.now() - timedelta(days=days_inactive)).strftime("%Y-%m-%d")
-        query = f"is:pr is:open updated:<={date_threshold}"
-        return self._search_issues(query, max_results)
+        Get PRs that have been open for a while without much activity or newly created non-draft PRs across all
+        accessible repositories.
+
+        :param users: List of usernames to filter by
+        :param max_results: Maximum number of PRs to return per user
+        :return: Dictionary of users and their PRs needing attention
+        """
+        not_recently_updated = f"updated:<={self._recently_upper_bound()}"
+        recently_created = f"created:>={self._recently_lower_bound()}"
+        is_not_draft = "-is:draft"
+        query = f"is:pr is:open ({not_recently_updated} OR  {recently_created}) {is_not_draft}))"
+
+        return self._search_issues_by_users(query, users, max_results)
+
+    def get_pr_timeline(self, repo_owner, repo_name, pr_number):
+        """
+        Fetch the timeline of a specific Pull Request.
+
+        :param repo_owner: Owner of the repository
+        :param repo_name: Name of the repository
+        :param pr_number: Number of the Pull Request
+        :return: List of TimelineEvent objects
+        """
+        endpoint = f"/repos/{repo_owner}/{repo_name}/issues/{pr_number}/timeline"
+        params = {"per_page": 100}
+        events = []
+
+        while True:
+            response = requests.get(f"{self.base_url}{endpoint}", headers=self.headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+            events.extend(TimelineEvent.parse_events(data))
+
+            if 'next' not in response.links:
+                break
+
+            params['page'] = response.links['next']['url'].split('page=')[-1]
+
+        return events
+
+    def _search_issues_by_users(self, base_query, users=None, max_results=None) -> dict[str, list[PullRequest]]:
+        """
+        Search issues and pull requests using the given query, grouped by users.
+
+        :param base_query: Base search query string
+        :param users: List of usernames to filter by
+        :param max_results: Maximum number of results to return per user
+        :return: Dictionary of users and their matching pull requests
+        """
+        results = {}
+
+        if users:
+            for user in users:
+                query = f"{base_query} author:{user}"
+                user_results = self._search_issues(query, max_results)
+                results[user] = user_results
+        else:
+            all_results = self._search_issues(base_query, max_results)
+            for pr in all_results:
+                user = pr.user
+                if user not in results:
+                    results[user] = []
+                results[user].append(pr)
+
+        return results
 
     def _search_issues(self, query, max_results=None) -> list[PullRequest]:
-
         """
         Search issues and pull requests using the given query.
 
@@ -111,3 +166,11 @@ class GitHubPRs:
             params['page'] = response.links['next']['url'].split('page=')[-1]
 
         return results
+
+    def _recently_lower_bound(self):
+        date_threshold = (datetime.now() - self.recency_threshold).strftime(DATE_TIME_FMT)
+        return date_threshold
+
+    def _recently_upper_bound(self):
+        date_threshold = (datetime.now() + self.recency_threshold).strftime(DATE_TIME_FMT)
+        return date_threshold

@@ -1,5 +1,8 @@
 from dataclasses import dataclass
-from typing import Optional
+from datetime import datetime
+
+from enum import Enum
+from typing import List, Optional
 
 
 @dataclass
@@ -7,6 +10,51 @@ class User:
     login: str
     id: int
     avatar_url: str
+
+
+class TimelineEventType(Enum):
+    COMMENTED = "commented"
+    COMMITTED = "committed"
+    REOPENED = "reopened"
+    CLOSED = "closed"
+    MERGED = "merged"
+    REVIEW_REQUESTED = "review_requested"
+    REVIEW_REQUEST_REMOVED = "review_request_removed"
+    REVIEWED = "reviewed"
+    # Add more event types as needed
+
+
+@dataclass
+class TimelineEvent:
+    id: int
+    node_id: str
+    url: str
+    actor: User
+    event: TimelineEventType
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    @staticmethod
+    def parse_event(event_data: dict) -> 'TimelineEvent':
+        return TimelineEvent(
+            id=event_data['id'],
+            node_id=event_data['node_id'],
+            url=event_data['url'],
+            actor=User(
+                login=event_data['actor']['login'],
+                id=event_data['actor']['id'],
+                avatar_url=event_data['actor']['avatar_url']
+            ),
+            event=TimelineEventType(event_data['event']),
+            created_at=datetime.fromisoformat(event_data['created_at'].replace('Z', '+00:00')),
+            updated_at=datetime.fromisoformat(event_data['updated_at'].replace('Z', '+00:00')) if event_data.get(
+                'updated_at'
+            ) else None
+        )
+
+    @staticmethod
+    def parse_events(events_data: list) -> List['TimelineEvent']:
+        return [TimelineEvent.parse_event(event) for event in events_data]
 
 
 @dataclass
@@ -22,6 +70,11 @@ class PullRequest:
     draft: bool
     user: User
     html_url: str
+    timeline: Optional[List[TimelineEvent]] = None
+
+    def fetch_timeline(self, github_prs: 'GitHubPRs'):
+        repo_owner, repo_name = self.html_url.split('/')[3:5]
+        self.timeline = github_prs.get_pr_timeline(repo_owner, repo_name, self.number)
 
     @staticmethod
     def parse_pr(pr_data: dict) -> 'PullRequest':
@@ -44,5 +97,10 @@ class PullRequest:
         )
 
     @staticmethod
-    def parse_prs(prs_data: list) -> list['PullRequest']:
+    def parse_prs(prs_data: list) -> List['PullRequest']:
         return [PullRequest.parse_pr(pr) for pr in prs_data]
+
+
+class PRState(Enum):
+    OPEN = "open"
+    CLOSED = "closed"

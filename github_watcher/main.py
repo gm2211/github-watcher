@@ -3,7 +3,7 @@ import os
 from github_auth import get_github_api_key
 from github_prs import GitHubPRs
 from notifications import NOTIFIER_APP, notify
-from objects import PullRequest
+from objects import PRState, PullRequest
 
 
 def read_users_from_file():
@@ -30,21 +30,25 @@ if __name__ == "__main__":
     if not users:
         print("No users found. Please check your GITHUB_USERS_FILE.")
     else:
+        github_token = get_github_api_key()
+        github_prs: GitHubPRs = GitHubPRs(github_token)
+
+        # Get PR information for all users in one call per PR type
+        user_open_prs = github_prs.get_prs(
+            state=PRState.OPEN,
+            is_draft=False,
+            max_results=100,
+            users=users
+        )
+
+        user_awaiting_review = github_prs.get_prs_that_await_review(max_results=50, users=users)
+        prs_that_need_attention = github_prs.get_prs_that_need_attention(max_results=75, users=users)
+        user_recently_closed_prs = github_prs.get_recently_closed_prs_by_users(users, max_results=100)
+
+        # Iterate through users to send notifications
         for username in users:
-            github_token = get_github_api_key()
-            github_prs: GitHubPRs = GitHubPRs(github_token)
-
-            # Get open, non-draft PRs across all repos (max 100 PRs)
-            open_prs = github_prs.get_prs(state="open", is_draft=False, max_results=100)
-
-            # Get recently closed PRs by specific users (max 100 PRs)
-            closed_prs = github_prs.get_recently_closed_prs_by_users([username], max_results=100)
-
-            # Get PRs awaiting review (max 50 PRs)
-            awaiting_review = github_prs.get_prs_that_await_review(max_results=50)
-
-            # Get PRs needing attention (max 75 PRs)
-            need_attention = github_prs.get_prs_that_need_attention(max_results=75)
-            pr: PullRequest
-            for pr in need_attention:
-                notify(NOTIFIER_APP, "GitHub PRs", f"{pr.number} for {username} needs attention.")
+            print(user_open_prs)
+            print(prs_that_need_attention)
+            if username in prs_that_need_attention:
+                for pr in prs_that_need_attention[username]:
+                    notify(NOTIFIER_APP, "GitHub PRs", f"{pr.number} for {username} needs attention.")
