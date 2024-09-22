@@ -4,6 +4,7 @@ import xxhash
 from datetime import datetime, timedelta
 from github_watcher.objects import PullRequest, User, TimelineEvent
 from enum import Enum
+from typing import Dict, Any, Optional
 
 
 class CustomJSONEncoder(json.JSONEncoder):
@@ -17,61 +18,95 @@ class CustomJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+class CacheBucket:
+    def __init__(self, name: str, expiration: timedelta):
+        self.name = name
+        self.expiration = expiration
+        self.last_updated = datetime.now()
+        self.entries: Dict[str, Any] = {}
+
+    def is_expired(self) -> bool:
+        return datetime.now() - self.last_updated > self.expiration
+
+    def get(self, key: str) -> Optional[Any]:
+        return self.entries.get(key)
+
+    def set(self, key: str, value: Any) -> None:
+        self.entries[key] = value
+        self.last_updated = datetime.now()
+
+
 class Cache:
-    def __init__(self, cache_dir, cache_expiration=timedelta(minutes=10)):
+    def __init__(self, cache_dir: str, default_expiration: timedelta = timedelta(minutes=10)):
         self.cache_dir = cache_dir
-        self.cache_expiration = cache_expiration
+        self.default_expiration = default_expiration
+        self.buckets: Dict[str, CacheBucket] = {}
         os.makedirs(cache_dir, exist_ok=True)
 
     @staticmethod
-    def _hash_key(key):
+    def _hash_key(key: str) -> str:
         return xxhash.xxh64(key.encode()).hexdigest()
 
-    def get(self, key):
-        hashed_key = Cache._hash_key(key)
-        file_path = os.path.join(self.cache_dir, f"{hashed_key}.json")
+    def _get_bucket(self, bucket_name: str) -> CacheBucket:
+        if bucket_name not in self.buckets:
+            self.buckets[bucket_name] = CacheBucket(bucket_name, self.default_expiration)
+            self._load_bucket(bucket_name)
+        return self.buckets[bucket_name]
+
+    def _load_bucket(self, bucket_name: str) -> None:
+        file_path = os.path.join(self.cache_dir, f"{bucket_name}.json")
         if os.path.exists(file_path):
             try:
                 with open(file_path, 'r') as f:
                     data = json.load(f)
-                    time_since_write_to_cache = datetime.now() - datetime.fromisoformat(data['cache_write_at'])
-                    if time_since_write_to_cache < self.cache_expiration:
-                        return data['value']
-            except json.JSONDecodeError:
-                # If there's a JSON decoding error, remove the corrupted cache file
-                os.remove(file_path)
-                print(f"Removed corrupted cache file: {file_path}")
-            except Exception as e:
-                print(f"Error reading cache file {file_path}: {str(e)}")
-        return None
+                    self.buckets[bucket_name] = CacheBucket(
+                        bucket_name,
+                        timedelta(seconds=data['expiration_seconds'])
+                    )
+                    self.buckets[bucket_name].last_updated = datetime.fromisoformat(data['last_updated'])
+                    self.buckets[bucket_name].entries = data['entries']
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                print(f"Error loading bucket {bucket_name}: {str(e)}")
+                # If there's an error, we'll create a new bucket
 
-    def set(self, key, value):
-        self.cleanup_expired_files()
-        hashed_key = Cache._hash_key(key)
-        file_path = os.path.join(self.cache_dir, f"{hashed_key}.json")
+    def _save_bucket(self, bucket_name: str) -> None:
+        bucket = self.buckets[bucket_name]
+        file_path = os.path.join(self.cache_dir, f"{bucket_name}.json")
         with open(file_path, 'w') as f:
             json.dump(
                 {
-                    'cache_write_at': datetime.now().isoformat(),
-                    'query': key,
-                    'value': value
+                    'expiration_seconds': bucket.expiration.total_seconds(),
+                    'last_updated': bucket.last_updated.isoformat(),
+                    'entries': bucket.entries
                 }, f, cls=CustomJSONEncoder
             )
 
-    def cleanup_expired_files(self):
+    def get(self, key: str, bucket_name: str = "default") -> Optional[Any]:
+        bucket = self._get_bucket(bucket_name)
+        if bucket.is_expired():
+            return None
+        return bucket.get(key)
+
+    def set(self, key: str, value: Any, bucket_name: str = "default") -> None:
+        self.cleanup()
+        bucket = self._get_bucket(bucket_name)
+        bucket.set(key, value)
+        self._save_bucket(bucket_name)
+
+    def cleanup(self) -> None:
         current_time = datetime.now()
-        for filename in os.listdir(self.cache_dir):
-            file_path = os.path.join(self.cache_dir, filename)
-            if os.path.isfile(file_path) and filename.endswith('.json'):
-                try:
-                    with open(file_path, 'r') as f:
-                        data = json.load(f)
-                        file_timestamp = datetime.fromisoformat(data['cache_write_at'])
-                        if current_time - file_timestamp > self.cache_expiration:
-                            os.remove(file_path)
-                except (json.JSONDecodeError, KeyError, ValueError):
-                    # If there's an error reading the file, remove it
+        for bucket_name, bucket in list(self.buckets.items()):
+            expired_keys = [key for key, value in bucket.entries.items()
+                            if isinstance(value, dict) and 'expiration' in value
+                            and current_time > value['expiration']]
+
+            for key in expired_keys:
+                del bucket.entries[key]
+
+            if not bucket.entries:
+                del self.buckets[bucket_name]
+                file_path = os.path.join(self.cache_dir, f"{bucket_name}.json")
+                if os.path.exists(file_path):
                     os.remove(file_path)
-                    print(f"Removed invalid cache file: {file_path}")
-                except Exception as e:
-                    print(f"Error processing cache file {file_path}: {str(e)}")
+            else:
+                self._save_bucket(bucket_name)

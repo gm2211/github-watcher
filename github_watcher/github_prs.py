@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
+import re
 
 import requests
 
-from cache import Cache
+from github_watcher.cache import Cache
 from github_watcher.objects import PRState, PullRequest, TimelineEvent
 
 DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
@@ -14,7 +15,8 @@ class GitHubPRs:
             token,
             base_url="https://api.github.com",
             recency_threshold=timedelta(days=1),
-            cache_dir=".cache"
+            cache_dir=".cache",
+            cache_ttl=timedelta(hours=1)
     ):
         self.token = token
         self.base_url = base_url
@@ -24,6 +26,7 @@ class GitHubPRs:
         }
         self.recency_threshold = recency_threshold
         self.cache = Cache(cache_dir)
+        self.cache_ttl = cache_ttl
 
     def get_prs(
             self,
@@ -104,7 +107,8 @@ class GitHubPRs:
         :return: List of TimelineEvent objects
         """
         cache_key = f"timeline_{repo_owner}_{repo_name}_{pr_number}"
-        cached_result = self.cache.get(cache_key)
+        bucket_name = "pr_timeline"
+        cached_result = self.cache.get(cache_key, bucket_name)
         if cached_result:
             return cached_result
 
@@ -123,7 +127,7 @@ class GitHubPRs:
 
             params['page'] = response.links['next']['url'].split('page=')[-1]
 
-        self.cache.set(cache_key, events)
+        self.cache.set(cache_key, events, bucket_name)
         return events
 
     def _search_issues_by_users(self, base_query, users=None, max_results=None) -> dict[str, list[PullRequest]]:
@@ -135,10 +139,13 @@ class GitHubPRs:
         :param max_results: Maximum number of results to return per user
         :return: Dictionary of users and their matching pull requests
         """
-        cache_key = f"search_issues_by_users_{base_query}_{'-'.join(sorted(users) if users else [])}_{max_results}"
-        cached_result = self.cache.get(cache_key)
-        if cached_result:
-            return {user: [PullRequest.parse_pr(pr_data) for pr_data in prs] for user, prs in cached_result.items()}
+        normalized_query = self._normalize_query(base_query)
+        cache_key = f"search_issues_by_users_{normalized_query}_{'-'.join(sorted(users) if users else [])}_{max_results}"
+        bucket_name = "search_issues"
+        cached_result = self.cache.get(cache_key, bucket_name)
+        if cached_result and self._is_cache_valid(cached_result, base_query):
+            return {user: [PullRequest.parse_pr(pr_data) for pr_data in prs] for user, prs in
+                    cached_result['results'].items()}
         results = {}
 
         if users:
@@ -154,7 +161,56 @@ class GitHubPRs:
                     results[user] = []
                 results[user].append(pr)
 
+        cache_data = {
+            'results': {user: [pr.to_dict() for pr in prs] for user, prs in results.items()},
+            'cache_time': datetime.now().isoformat(),
+            'original_query': base_query
+        }
+        self.cache.set(cache_key, cache_data, bucket_name)
         return results
+
+    def _normalize_query(self, query):
+        """
+        Normalize the query by replacing date and time-based conditions with placeholders.
+        """
+        # Replace date and time-based conditions with placeholders
+        normalized_query = re.sub(
+            r'(created|updated|closed):(>=|<=|>|<)?(\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z)?)',
+            r'\1:DATETIME_PLACEHOLDER',
+            query
+        )
+        return normalized_query
+
+    def _is_cache_valid(self, cached_data, original_query):
+        """
+        Check if the cached data is still valid based on the original query and cache TTL.
+        """
+        if 'cache_time' not in cached_data:
+            return False
+
+        cache_time = datetime.fromisoformat(cached_data['cache_time'])
+        if datetime.now() - cache_time > self.cache_ttl:
+            return False
+
+        # Check if the query contains time-sensitive conditions
+        date_conditions = re.findall(
+            r'(created|updated|closed):(>=|<=|>|<)?(\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z)?)',
+            original_query
+        )
+        for condition, operator, date_str, _ in date_conditions:
+            if 'T' in date_str:
+                query_datetime = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
+            else:
+                query_datetime = datetime.strptime(date_str, "%Y-%m-%d")
+
+            if operator in ('>=', '>'):
+                if datetime.now() - query_datetime > self.cache_ttl:
+                    return False
+            elif operator in ('<=', '<'):
+                if query_datetime - datetime.now() > self.cache_ttl:
+                    return False
+
+        return True
 
     def _search_issues(self, query, max_results=None) -> list[PullRequest]:
         """
@@ -164,10 +220,13 @@ class GitHubPRs:
         :param max_results: Maximum number of results to return
         :return: List of matching pull requests
         """
-        cache_key = f"search_{query}_{max_results}"
-        cached_result = self.cache.get(cache_key)
-        if cached_result:
-            return [PullRequest.parse_pr(pr_data) for pr_data in cached_result]
+        normalized_query = self._normalize_query(query)
+        cache_key = f"search_{normalized_query}_{max_results}"
+        bucket_name = "search_issues"
+
+        cached_result = self.cache.get(cache_key, bucket_name)
+        if cached_result and self._is_cache_valid(cached_result, query):
+            return [PullRequest.parse_pr(pr_data) for pr_data in cached_result['results']]
 
         endpoint = "/search/issues"
         params = {"q": query, "per_page": 100}
@@ -188,7 +247,12 @@ class GitHubPRs:
 
             params['page'] = response.links['next']['url'].split('page=')[-1]
 
-        self.cache.set(cache_key, [pr.to_dict() for pr in results])
+        cache_data = {
+            'results': [pr.to_dict() for pr in results],
+            'cache_time': datetime.now().isoformat(),
+            'original_query': query
+        }
+        self.cache.set(cache_key, cache_data, bucket_name)
         return results
 
     def _recently_lower_bound(self):
