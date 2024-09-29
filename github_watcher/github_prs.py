@@ -188,7 +188,8 @@ class GitHubPRs:
         self.cache.set(cache_key, cache_data, bucket_name)
         return results
 
-    def _normalize_query(self, query):
+    @staticmethod
+    def _normalize_query(query):
         """
         Normalize the query by replacing date and time-based conditions with placeholders.
         """

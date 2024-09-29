@@ -8,7 +8,8 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 requests = "^2.25.1"
-xxhash = "^2.0.2"
+xxhash = "^3.5.0"
+pygame = "^2.0.1"
 
 [build-system]
 requires = ["poetry-core"]
