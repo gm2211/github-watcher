@@ -1,54 +1,35 @@
-import os
-
-from github_auth import get_github_api_key
-from github_prs import GitHubPRs
-from notifications import NOTIFIER_APP, notify
-from objects import PRState, PullRequest
+from utils import read_users_from_file, get_pr_data
+from ui import open_ui
 
 
-def read_users_from_file():
-    file_path = os.getenv('GITHUB_USERS_FILE')
-    if not file_path:
-        print("GITHUB_USERS_FILE environment variable not set.")
-        return []
+def main():
+    users = read_users_from_file()
+    if not users:
+        print(
+            "No users found. Please check your GITHUB_USERS_FILE or create a users.txt file in the project root."
+        )
+        return
 
-    print(f"Reading users from file: {file_path}")
     try:
-        with open(file_path, 'r') as file:
-            return [line.strip() for line in file if line.strip()]
-    except FileNotFoundError:
-        print(f"Users file not found: {file_path}")
-        return []
+        (
+            open_prs_by_user,
+            prs_awaiting_review_by_user,
+            prs_that_need_attention_by_user,
+            user_recently_closed_prs_by_user,
+        ) = get_pr_data(users)
     except Exception as e:
-        print(f"Error reading users file: {e}")
-        return []
+        print(f"Error fetching PR data: {e}")
+        print("Please check your GitHub token and internet connection.")
+        return
+
+    # Open the UI and pass the pull requests data
+    open_ui(
+        open_prs_by_user,
+        prs_awaiting_review_by_user,
+        prs_that_need_attention_by_user,
+        user_recently_closed_prs_by_user,
+    )
 
 
 if __name__ == "__main__":
-    users = read_users_from_file()
-
-    if not users:
-        print("No users found. Please check your GITHUB_USERS_FILE.")
-    else:
-        github_token = get_github_api_key()
-        github_prs: GitHubPRs = GitHubPRs(github_token)
-
-        # Get PR information for all users in one call per PR type
-        user_open_prs = github_prs.get_prs(
-            state=PRState.OPEN,
-            is_draft=False,
-            max_results=100,
-            users=users
-        )
-
-        user_awaiting_review = github_prs.get_prs_that_await_review(max_results=50, users=users)
-        prs_that_need_attention = github_prs.get_prs_that_need_attention(max_results=75, users=users)
-        user_recently_closed_prs = github_prs.get_recently_closed_prs_by_users(users, max_results=100)
-
-        # Iterate through users to send notifications
-        for username in users:
-            print(user_open_prs)
-            print(prs_that_need_attention)
-            if username in prs_that_need_attention:
-                for pr in prs_that_need_attention[username]:
-                    notify(NOTIFIER_APP, "GitHub PRs", f"{pr.number} for {username} needs attention.")
+    main()
