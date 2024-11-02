@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QFrame, QScrollArea
+    QPushButton, QLabel, QFrame, QScrollArea, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QFont
@@ -23,38 +23,86 @@ class SectionFrame(QFrame):
             }
         """)
         
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(5)  # Reduced spacing between elements
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        self.main_layout.setSpacing(5)
         
-        # Title container to ensure it stays at top
-        title_container = QFrame()
-        title_container.setStyleSheet("background: transparent;")
-        title_layout = QVBoxLayout(title_container)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(0)
+        # Header container
+        header_container = QFrame()
+        header_container.setFixedHeight(30)  # Fixed height for header
+        header_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        header_container.setStyleSheet("background: transparent;")
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(5)
+        
+        # Left side of header (title and toggle)
+        left_header = QWidget()
+        left_header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        left_layout = QHBoxLayout(left_header)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(5)
         
         # Title label
-        title_label = QLabel(title)
-        title_label.setFont(QFont("", 14, QFont.Weight.Bold))
-        title_layout.addWidget(title_label)
+        self.title_label = QLabel(title)
+        self.title_label.setFont(QFont("", 14, QFont.Weight.Bold))
+        left_layout.addWidget(self.title_label)
         
-        # Add title container at the top
-        layout.addWidget(title_container, 0)  # 0 stretch factor keeps it at minimum size
+        # Toggle button
+        self.toggle_button = QPushButton("▼")
+        self.toggle_button.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #ffffff;
+                padding: 0px 5px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                color: #cccccc;
+            }
+        """)
+        self.toggle_button.setFixedSize(20, 20)
+        self.toggle_button.clicked.connect(self.toggle_content)
+        left_layout.addWidget(self.toggle_button)
+        left_layout.addStretch()
         
-        # Add content container that will expand
-        content_container = QFrame()
-        content_container.setStyleSheet("background: transparent;")
-        content_layout = QVBoxLayout(content_container)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(content_container, 1)  # 1 stretch factor allows it to expand
+        header_layout.addWidget(left_header)
+        self.main_layout.addWidget(header_container)
         
-        # Store references
-        self.title_label = title_label
-        self.content_layout = content_layout
+        # Content container
+        self.content_container = QFrame()
+        self.content_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.content_container.setStyleSheet("background: transparent;")
+        self.content_layout = QVBoxLayout(self.content_container)
+        self.content_layout.setContentsMargins(0, 5, 0, 0)
+        self.content_layout.setSpacing(5)
         
+        self.main_layout.addWidget(self.content_container)
+        
+        # Make header clickable
+        header_container.mousePressEvent = self.toggle_content
+        header_container.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        self.is_expanded = True
+    
+    def toggle_content(self, event=None):
+        self.is_expanded = not self.is_expanded
+        self.content_container.setVisible(self.is_expanded)
+        self.toggle_button.setText("▼" if self.is_expanded else "▶")
+        
+        # Update minimum height based on state
+        if self.is_expanded:
+            self.setMinimumHeight(0)
+        else:
+            self.setMinimumHeight(50)  # Just enough for header
+    
+    def set_empty(self, is_empty):
+        """Collapse section if empty"""
+        if is_empty and self.is_expanded:
+            self.toggle_content()
+    
     def layout(self):
-        # Override to return the content layout instead of the main layout
         return self.content_layout
 
 
@@ -341,7 +389,7 @@ class PRWatcherUI(QMainWindow):
         self.auto_refresh_timer.timeout.connect(self.refresh_data)
         self.auto_refresh_timer.start(10000)  # 10 seconds
         
-        # Initialize tracking for PRs
+        # Initialize tracking for PRs with empty sets
         self.previously_open_prs = set()
         self.previously_closed_prs = set()
         self.notified_prs = set()
@@ -371,6 +419,15 @@ class PRWatcherUI(QMainWindow):
 
     def update_pr_lists(self, open_prs_by_user, prs_awaiting_review_by_user,
                        prs_that_need_attention_by_user, user_recently_closed_prs_by_user):
+        # First time initialization of tracking sets
+        if not self.previously_closed_prs and isinstance(user_recently_closed_prs_by_user, dict):
+            # Initialize with existing closed PRs to prevent "new PR" notifications for reopened PRs
+            for prs in user_recently_closed_prs_by_user.values():
+                for pr in prs:
+                    pr_num = getattr(pr, 'number', None)
+                    if pr_num:
+                        self.previously_closed_prs.add(pr_num)
+        
         # Get current open PRs
         current_open_prs = set()
         current_closed_prs = set()
@@ -475,13 +532,19 @@ class PRWatcherUI(QMainWindow):
         # Clear existing content
         for i in reversed(range(frame.layout().count())):
             widget = frame.layout().itemAt(i).widget()
-            if widget != frame.title_label:
+            if widget:
                 widget.deleteLater()
         
-        if not prs:
+        is_empty = not prs
+        if is_empty:
             label = QLabel("No PRs to display")
             frame.layout().addWidget(label)
+            frame.set_empty(True)
             return
+        
+        # If not empty, expand the section
+        if not frame.is_expanded:
+            frame.toggle_content()
         
         # Handle dict of PRs
         if isinstance(prs, dict):
