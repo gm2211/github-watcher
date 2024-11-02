@@ -741,6 +741,7 @@ class LoadingOverlay(QWidget):
 class RefreshWorker(QThread):
     finished = pyqtSignal(tuple)  # Signal to emit when refresh is complete
     error = pyqtSignal(str)       # Signal to emit when an error occurs
+    progress = pyqtSignal(str)    # Signal to emit progress updates
     
     def __init__(self, github_prs, users, section=None):
         super().__init__()
@@ -750,9 +751,19 @@ class RefreshWorker(QThread):
         
     def run(self):
         try:
+            section_names = {
+                'open': 'Open PRs',
+                'review': 'Needs Review',
+                'attention': 'Changes Requested',
+                'closed': 'Recently Closed'
+            }
+            section_name = section_names.get(self.section, self.section)
+            self.progress.emit(f"Loading {section_name}...")
+            
             print(f"\nDebug - Worker: Fetching {self.section} PR data...")
             new_data = self.github_prs.get_pr_data(self.users, force_refresh=True, section=self.section)
             if new_data is not None:
+                self.progress.emit(f"Completed {section_name}")
                 self.finished.emit(new_data)
             else:
                 self.error.emit(f"Refresh failed for section {self.section}, no data returned")
@@ -797,6 +808,12 @@ class PRWatcherUI(QMainWindow):
         """)
         self.spinner_label.hide()  # Hidden by default
         left_layout.addWidget(self.spinner_label)
+        
+        # Initialize spinner rotation and timer
+        self.spinner_rotation = 0
+        self.spinner_timer = QTimer(self)
+        self.spinner_timer.timeout.connect(self.rotate_spinner)
+        self.spinner_timer.setInterval(50)  # 50ms for smoother rotation
         
         # Title
         title = QLabel("GitHub PR Watcher")
@@ -902,27 +919,15 @@ class PRWatcherUI(QMainWindow):
         scroll_area.setWidget(scroll_widget)
         main_layout.addWidget(scroll_area)
         
-        # Set up auto-refresh timer
+        # Initialize auto refresh timer
         self.auto_refresh_timer = QTimer(self)
         self.auto_refresh_timer.timeout.connect(self.refresh_data)
-        
-        # Load settings and set initial refresh interval
-        self.settings = load_settings()
-        refresh_value = self.settings.get('refresh', {}).get('value', 10)
-        refresh_unit = self.settings.get('refresh', {}).get('unit', 'seconds')
-        
-        if refresh_unit == 'minutes':
-            refresh_ms = refresh_value * 60 * 1000
-        else:  # seconds
-            refresh_ms = refresh_value * 1000
-        
-        self.auto_refresh_timer.start(refresh_ms)
         
         # Initialize tracking for PRs with empty sets
         self.previously_open_prs = set()
         self.previously_closed_prs = set()
         self.notified_prs = set()
-        self.initial_state = True  # Add flag for initial state
+        self.initial_state = True
         
         # Set window size and style
         self.setMinimumSize(800, 600)
@@ -935,22 +940,44 @@ class PRWatcherUI(QMainWindow):
             }
         """)
         
+        # Initialize worker list
+        self.workers = []
+        
         # Initialize worker to None
         self.refresh_worker = None
         self.consecutive_failures = 0
         self.max_backoff = 5
+        
+        # Add progress label next to spinner
+        self.progress_label = QLabel("")
+        self.progress_label.setStyleSheet("""
+            QLabel {
+                color: #0d6efd;
+                font-size: 12px;
+                padding: 0 5px;
+            }
+        """)
+        self.progress_label.hide()
+        left_layout.addWidget(self.progress_label)
+        
+        # Initialize sections dict to track loading state
+        self.loading_sections = {}
     
     def show_test_notification(self):
         notify(NOTIFIER_APP, "GitHub PR Watcher", "Test notification - System is working!")
 
     def refresh_data(self):
-        if self.refresh_worker and self.refresh_worker.isRunning():
-            print("Debug - Refresh already in progress, skipping")
-            return
+        # Clean up any existing workers
+        self.cleanup_workers()
             
         print("\nDebug - Starting refresh...")
         self.spinner_label.show()
         self.spinner_timer.start()
+        self.progress_label.show()
+        self.progress_label.setText("Starting refresh...")
+        
+        # Reset loading sections
+        self.loading_sections = {}
         
         # Create and start worker threads for each section
         sections = ['review', 'open', 'attention', 'closed']
@@ -958,7 +985,37 @@ class PRWatcherUI(QMainWindow):
             worker = RefreshWorker(self.github_prs, self.settings.get('users', []), section)
             worker.finished.connect(lambda data, s=section: self.handle_section_refresh(s, data))
             worker.error.connect(self.handle_refresh_error)
+            worker.progress.connect(self.update_progress)
+            worker.finished.connect(lambda _, w=worker: self.cleanup_worker(w))
+            worker.error.connect(lambda _, w=worker: self.cleanup_worker(w))
+            self.workers.append(worker)
             worker.start()
+
+    def update_progress(self, message):
+        """Update progress message"""
+        self.progress_label.setText(message)
+
+    def cleanup_worker(self, worker):
+        """Clean up a single worker"""
+        if worker in self.workers:
+            worker.quit()
+            worker.wait()
+            self.workers.remove(worker)
+            print(f"Debug - Cleaned up worker (remaining: {len(self.workers)})")
+            
+            # If this was the last worker, hide the spinner and progress
+            if not self.workers:
+                self.spinner_label.hide()
+                self.spinner_timer.stop()
+                self.progress_label.hide()
+                self.progress_label.setText("")
+
+    def cleanup_workers(self):
+        """Clean up all workers"""
+        for worker in self.workers[:]:  # Create a copy of the list to avoid modification during iteration
+            self.cleanup_worker(worker)
+        self.workers.clear()
+        print("Debug - Cleaned up all workers")
 
     def handle_section_refresh(self, section, data):
         """Handle refresh completion for a specific section"""
@@ -977,25 +1034,15 @@ class PRWatcherUI(QMainWindow):
             # Create a tuple with empty dicts except for the refreshed section
             section_data = tuple({} if i != idx else data[idx] for i in range(4))
             self.update_pr_lists(*section_data)
-        
-        # Check if all sections are loaded
-        if all(frame.prs for frame in [self.open_prs_frame, self.needs_review_frame, 
-                                     self.changes_requested_frame, self.recently_closed_frame]):
-            self.spinner_label.hide()
-            self.spinner_timer.stop()
 
     def handle_refresh_error(self, error_msg):
         print(f"Error refreshing data: {error_msg}")
         self.consecutive_failures += 1
         print(f"Consecutive failures: {self.consecutive_failures}")
-        self.spinner_label.hide()
-        self.spinner_timer.stop()
 
     def closeEvent(self, event):
-        # Clean up worker thread when closing
-        if self.refresh_worker:
-            self.refresh_worker.quit()
-            self.refresh_worker.wait()
+        # Clean up all workers when closing
+        self.cleanup_workers()
         super().closeEvent(event)
 
     def set_refresh_callback(self, callback):
@@ -1260,26 +1307,32 @@ class PRWatcherUI(QMainWindow):
 
 
 def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
-            prs_that_need_attention_by_user, user_recently_closed_prs_by_user):
+            prs_that_need_attention_by_user, user_recently_closed_prs_by_user,
+            github_prs=None, settings=None):
     app = QApplication([])
     app.setStyle('Fusion')
     
     window = PRWatcherUI()
-    settings = load_settings()
-    window.settings = settings  # Store settings in window
-    window.consecutive_failures = 0  # Track failures for backoff
-    window.max_backoff = 5  # Maximum backoff in seconds
     
-    # Create GitHubPRs instance
-    github_token = get_github_api_key()
-    cache_duration = settings.get('cache_duration', 1)
-    github_prs = GitHubPRs(
-        github_token,
-        recency_threshold=timedelta(days=1),
-        cache_dir=".cache",
-        cache_ttl=timedelta(hours=cache_duration)
-    )
-    window.github_prs = github_prs  # Store instance in window
+    # Use passed settings or load them
+    if settings is None:
+        settings = load_settings()
+    window.settings = settings
+    
+    window.consecutive_failures = 0
+    window.max_backoff = 5
+    
+    # Use passed GitHubPRs instance or create new one
+    if github_prs is None:
+        github_token = get_github_api_key()
+        cache_duration = settings.get('cache_duration', 1)
+        github_prs = GitHubPRs(
+            github_token,
+            recency_threshold=timedelta(days=1),
+            cache_dir=".cache",
+            cache_ttl=timedelta(hours=cache_duration)
+        )
+    window.github_prs = github_prs
     
     # Update initial data
     window.update_pr_lists(
@@ -1288,32 +1341,6 @@ def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
         prs_that_need_attention_by_user,
         user_recently_closed_prs_by_user
     )
-    
-    # Set up refresh callback
-    def refresh_callback():
-        try:
-            if window.consecutive_failures > 0:
-                backoff = min(2 ** (window.consecutive_failures - 1), window.max_backoff)
-                print(f"\nDebug - Backing off for {backoff} seconds due to previous failures")
-                time.sleep(backoff)
-            
-            print("\nDebug - Fetching fresh PR data...")
-            new_data = window.github_prs.get_pr_data(window.settings.get('users', []), force_refresh=True)
-            if new_data is not None:
-                window.update_pr_lists(*new_data)
-                window.consecutive_failures = 0
-            else:
-                print("Debug - Refresh failed, keeping existing data")
-                window.consecutive_failures += 1
-            
-        except Exception as e:
-            window.consecutive_failures += 1
-            print(f"Error refreshing data: {str(e)}")
-            print(f"Consecutive failures: {window.consecutive_failures}")
-        finally:
-            window.loading_overlay.hide()
-    
-    window.set_refresh_callback(refresh_callback)
     
     # Initialize refresh timer with current settings
     window.setup_refresh_timer(settings.get('refresh'))

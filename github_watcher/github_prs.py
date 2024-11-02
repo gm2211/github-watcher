@@ -457,7 +457,7 @@ class GitHubPRs:
                 for section_name, query in [
                     ('open', "is:pr is:open draft:false"),
                     ('review', "is:pr is:open review:none comments:0"),
-                    ('attention', f"is:pr is:open ({self._not_recently_updated()} OR {self._recently_created()}) -is:draft"),
+                    ('attention', f"is:pr is:open updated:<={self._not_recently_updated()} -is:draft"),
                     ('closed', f"is:pr is:closed closed:>={self._recent_date()}")
                 ]:
                     if section and section != section_name:
@@ -534,3 +534,18 @@ class GitHubPRs:
     def cache_data(self, users, data):
         """Cache PR data"""
         cache_pr_data(self, users, data)
+
+    def _not_recently_updated(self):
+        """Get the date threshold for PRs not recently updated"""
+        date_threshold = (datetime.now() - self.recency_threshold).strftime(DATE_TIME_FMT)
+        return date_threshold
+
+    def _recently_created(self):
+        """Get the date threshold for recently created PRs"""
+        date_threshold = (datetime.now() - self.recency_threshold).strftime(DATE_TIME_FMT)
+        return date_threshold
+
+    def _recent_date(self):
+        """Get the date threshold for recently closed PRs"""
+        date_threshold = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        return date_threshold
