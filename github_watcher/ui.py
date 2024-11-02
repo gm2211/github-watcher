@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QFrame, QScrollArea, QSizePolicy
+    QPushButton, QLabel, QFrame, QScrollArea, QSizePolicy, QDialog,
+    QLineEdit, QSpinBox, QFormLayout, QTextEdit
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QFont
@@ -9,6 +10,7 @@ from datetime import datetime, timezone
 import platform
 import os
 from notifications import notify, NOTIFIER_APP
+import yaml
 
 
 class SectionFrame(QFrame):
@@ -364,6 +366,104 @@ def format_time_diff(time_diff):
         return f"{days} day{'s' if days != 1 else ''} ago"
 
 
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        form = QFormLayout()
+        
+        # Users list
+        self.users_edit = QTextEdit()
+        self.users_edit.setPlaceholderText("Enter GitHub usernames (one per line)")
+        form.addRow("Users to watch:", self.users_edit)
+        
+        # Refresh interval
+        self.refresh_interval = QSpinBox()
+        self.refresh_interval.setRange(5, 3600)  # 5 seconds to 1 hour
+        self.refresh_interval.setSuffix(" seconds")
+        form.addRow("Refresh interval:", self.refresh_interval)
+        
+        # Cache duration
+        self.cache_duration = QSpinBox()
+        self.cache_duration.setRange(1, 24)  # 1 to 24 hours
+        self.cache_duration.setSuffix(" hours")
+        form.addRow("Cache duration:", self.cache_duration)
+        
+        layout.addLayout(form)
+        
+        # Buttons
+        buttons = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        
+        buttons.addStretch()
+        buttons.addWidget(save_btn)
+        buttons.addWidget(cancel_btn)
+        layout.addLayout(buttons)
+        
+        # Load current settings
+        self.load_settings()
+    
+    def load_settings(self):
+        settings = load_settings()
+        self.users_edit.setPlainText("\n".join(settings.get('users', [])))
+        self.refresh_interval.setValue(settings.get('refresh_interval', 10))
+        self.cache_duration.setValue(settings.get('cache_duration', 1))
+    
+    def get_settings(self):
+        return {
+            'users': [u.strip() for u in self.users_edit.toPlainText().split('\n') if u.strip()],
+            'refresh_interval': self.refresh_interval.value(),
+            'cache_duration': self.cache_duration.value()
+        }
+
+
+def load_settings():
+    settings_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.yaml')
+    
+    if not os.path.exists(settings_file):
+        # Try to migrate from users.txt
+        users = []
+        users_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'users.txt')
+        if os.path.exists(users_file):
+            with open(users_file, 'r') as f:
+                users = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        
+        # Default settings
+        settings = {
+            'users': users,
+            'refresh_interval': 10,  # 10 seconds
+            'cache_duration': 1      # 1 hour
+        }
+        
+        # Save default settings
+        save_settings(settings)
+        return settings
+    
+    try:
+        with open(settings_file, 'r') as f:
+            return yaml.safe_load(f)
+    except Exception as e:
+        print(f"Error loading settings: {e}")
+        return {}
+
+
+def save_settings(settings):
+    settings_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.yaml')
+    try:
+        with open(settings_file, 'w') as f:
+            yaml.dump(settings, f)
+    except Exception as e:
+        print(f"Error saving settings: {e}")
+
+
 class PRWatcherUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -436,6 +536,27 @@ class PRWatcherUI(QMainWindow):
         """)
         buttons_layout.addWidget(refresh_btn)
         
+        # Settings button
+        settings_btn = QPushButton("⚙️")
+        settings_btn.clicked.connect(self.show_settings)
+        settings_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        settings_btn.setFixedWidth(30)  # Square button
+        settings_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #404040;
+                border: none;
+                border-radius: 5px;
+                padding: 5px;
+                color: white;
+                font-size: 14px;
+                height: 25px;
+            }
+            QPushButton:hover {
+                background-color: #505050;
+            }
+        """)
+        buttons_layout.addWidget(settings_btn)
+        
         header_layout.addLayout(buttons_layout)
         main_layout.addLayout(header_layout)
         
@@ -487,7 +608,11 @@ class PRWatcherUI(QMainWindow):
                 color: #ffffff;
             }
         """)
-
+        
+        # Load settings
+        self.settings = load_settings()
+        self.auto_refresh_timer.setInterval(self.settings.get('refresh_interval', 10) * 1000)
+    
     def show_test_notification(self):
         notify(NOTIFIER_APP, "GitHub PR Watcher", "Test notification - System is working!")
 
@@ -648,6 +773,16 @@ class PRWatcherUI(QMainWindow):
                 card = create_pr_card(pr)
                 frame.layout().addWidget(card)
 
+    def show_settings(self):
+        dialog = SettingsDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.settings = dialog.get_settings()
+            save_settings(self.settings)
+            # Update refresh timer
+            self.auto_refresh_timer.setInterval(self.settings['refresh_interval'] * 1000)
+            # Trigger immediate refresh
+            self.refresh_data()
+
 
 def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
             prs_that_need_attention_by_user, user_recently_closed_prs_by_user):
@@ -666,15 +801,11 @@ def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
     
     # Set up refresh callback
     def refresh_callback():
-        from utils import get_pr_data, read_users_from_file
-        
-        users = read_users_from_file()
-        if not users:
-            return
+        from utils import get_pr_data
         
         try:
             print("\nDebug - Fetching fresh PR data...")
-            new_data = get_pr_data(users)
+            new_data = get_pr_data(window.settings.get('users', []))
             window.update_pr_lists(*new_data)
         except Exception as e:
             error_msg = f"Error refreshing data: {str(e)}"

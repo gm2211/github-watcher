@@ -3,46 +3,39 @@ from datetime import timedelta
 from github_auth import get_github_api_key
 from github_prs import GitHubPRs
 from objects import PRState
+from ui import load_settings, save_settings
 
 
 def read_users_from_file():
-    file_path = os.getenv("GITHUB_USERS_FILE")
-    if not file_path:
-        # Fallback: use 'users.txt' in the project root directory
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        file_path = os.path.join(project_root, "users.txt")
-        print(
-            f"GITHUB_USERS_FILE environment variable not set. Using default: {file_path}"
-        )
-    else:
-        print(f"Reading users from file: {file_path}")
-
-    try:
-        with open(file_path, "r") as file:
-            return [
-                line.strip()
-                for line in file
-                if line.strip() and not line.startswith("#")
-            ]
-    except FileNotFoundError:
-        print(f"Users file not found: {file_path}")
+    # Load from settings.yaml instead of users.txt
+    settings = load_settings()
+    
+    if not settings or not settings.get('users'):
+        print("No users configured. Please add users in Settings.")
         return []
-    except Exception as e:
-        print(f"Error reading users file: {e}")
-        return []
+    
+    return settings.get('users', [])
 
 
 def get_pr_data(users):
     github_token = get_github_api_key()
-    # Create GitHubPRs with minimal caching
+    
+    # Load cache settings from settings.yaml
+    settings = load_settings()
+    cache_duration = settings.get('cache_duration', 1)  # Default 1 hour if not set
+    
+    # Create GitHubPRs with settings from settings.yaml
     github_prs = GitHubPRs(
         github_token,
-        recency_threshold=timedelta(days=1),  # Use timedelta for recency threshold
+        recency_threshold=timedelta(days=1),
         cache_dir=".cache",
-        cache_ttl=timedelta(seconds=1)  # Use timedelta for cache TTL
+        cache_ttl=timedelta(hours=cache_duration)  # Use configured cache duration
     )
 
-    print("\nDebug - Fetching fresh PR data from GitHub API...")
+    # Invalidate state-related caches before fetching
+    github_prs.cache.invalidate_bucket("search_issues")
+
+    print("\nDebug - Fetching PR data from GitHub API...")
     
     # Get the basic PR data
     open_prs_by_user = github_prs.get_prs(
@@ -64,14 +57,16 @@ def get_pr_data(users):
     )
     print("\nDebug - Recently closed PRs:", user_recently_closed_prs_by_user)
 
-    # Enrich PRs with timeline data
+    # Enrich PRs with timeline data - this is expensive, so we can cache it
     def enrich_prs(prs_by_user):
         enriched = {}
         for user, prs in prs_by_user.items():
             enriched[user] = []
             for pr in prs:
-                # Fetch timeline data for each PR
-                timeline = github_prs.get_pr_timeline(pr.repo_owner, pr.repo_name, pr.number)
+                # Timeline data changes less frequently, so we can use cache
+                timeline = github_prs.get_pr_timeline(
+                    pr.repo_owner, pr.repo_name, pr.number
+                )
                 print(f"\nDebug - Timeline fetched for PR #{pr.number}")
                 print(f"Debug - PR state: {pr.state}, merged: {pr.merged_at}")
                 pr.timeline = timeline

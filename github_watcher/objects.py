@@ -58,6 +58,9 @@ class TimelineEventType(Enum):
     REVIEWED = "reviewed"
     # Add more event types as needed
 
+    def __str__(self):
+        return self.value
+
 
 @dataclass
 class TimelineEvent:
@@ -70,56 +73,98 @@ class TimelineEvent:
     updated_at: Optional[datetime] = None
 
     def to_dict(self):
-        return asdict(self)
+        """Convert TimelineEvent to a dictionary for serialization"""
+        return {
+            'id': self.id,
+            'node_id': self.node_id,
+            'url': self.url,
+            'author': self.author.to_dict() if self.author else None,
+            'eventType': self.eventType.value if self.eventType else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
 
     @classmethod
     def from_dict(cls, data: dict) -> 'TimelineEvent':
-        author_data = data.get('author') or data.get('actor')
-        author = Author.parse(author_data) if isinstance(author_data, dict) and 'email' in author_data else User.parse(
-            author_data
-            )
+        """Create TimelineEvent from a dictionary"""
+        # Convert string back to enum if present
+        event_type = TimelineEventType(data['eventType']) if data.get('eventType') else None
+        
+        # Parse author data
+        author_data = data.get('author')
+        if author_data:
+            if 'email' in author_data:
+                author = Author.parse(author_data)
+            else:
+                author = User.parse(author_data)
+        else:
+            author = None
+
+        # Parse dates
+        created_at = datetime.fromisoformat(data['created_at']) if data.get('created_at') else None
+        updated_at = datetime.fromisoformat(data['updated_at']) if data.get('updated_at') else None
 
         return cls(
-            id=data.get('sha') or data.get('id'),
-            node_id=data.get('node_id'),
-            url=data.get('url'),
+            id=data['id'],
+            node_id=data['node_id'],
+            url=data['url'],
             author=author,
-            eventType=TimelineEventType(data.get('event')) if data.get('event') else None,
-            created_at=datetime.fromisoformat(data['created_at'].replace('Z', '+00:00')) if data.get(
-                'created_at'
-                ) else None,
-            updated_at=datetime.fromisoformat(data['updated_at'].replace('Z', '+00:00')) if data.get(
-                'updated_at'
-                ) else None
+            eventType=event_type,
+            created_at=created_at,
+            updated_at=updated_at
         )
 
     @staticmethod
-    def parse_event(event_data: dict) -> Optional['TimelineEvent']:
-        def parse_datetime(field):
-            return datetime.fromisoformat(field.replace('Z', '+00:00'))
-
-        try:
-            author = Author.parse(event_data['author']) if event_data.get('author') else User.parse(event_data['actor'])
-            return TimelineEvent(
-                id=event_data['sha'] if event_data.get('sha') else event_data['id'],
-                node_id=event_data['node_id'],
-                url=event_data['url'],
-                author=author,
-                eventType=TimelineEventType(event_data['event']) if event_data.get('event') else None,
-                created_at=parse_datetime(event_data['created_at']) if event_data.get('created_at') else None,
-                updated_at=parse_datetime(event_data['updated_at']) if event_data.get('updated_at') else None
-            )
-        except KeyError as e:
-            print(f"Error: Missing required key in event_data: {e}, event_data: {event_data}")
-        except ValueError as e:
-            print(f"Error: Invalid data format in event_data: {e}, event_data: {event_data}")
-        except Exception as e:
-            print(f"Unexpected error occurred while parsing event: {e}, event_data: {event_data}")
-        return None
-
-    @staticmethod
     def parse_events(events_data: list) -> List['TimelineEvent']:
-        return [TimelineEvent.parse_event(event) for event in events_data]
+        """Parse a list of timeline events from GitHub API data"""
+        parsed_events = []
+        for event in events_data:
+            event_type = None
+            if event.get('event') == 'commented':
+                event_type = TimelineEventType.COMMENTED
+            elif event.get('event') == 'committed':
+                event_type = TimelineEventType.COMMITTED
+            elif event.get('event') == 'reopened':
+                event_type = TimelineEventType.REOPENED
+            elif event.get('event') == 'closed':
+                event_type = TimelineEventType.CLOSED
+            elif event.get('event') == 'merged':
+                event_type = TimelineEventType.MERGED
+            elif event.get('event') == 'review_requested':
+                event_type = TimelineEventType.REVIEW_REQUESTED
+            elif event.get('event') == 'review_request_removed':
+                event_type = TimelineEventType.REVIEW_REQUEST_REMOVED
+            elif event.get('event') == 'reviewed':
+                event_type = TimelineEventType.REVIEWED
+
+            if event_type:
+                try:
+                    # Parse author/actor data
+                    author_data = event.get('author') or event.get('actor')
+                    if author_data:
+                        if 'email' in author_data:
+                            author = Author.parse(author_data)
+                        else:
+                            author = User.parse(author_data)
+                    else:
+                        author = None
+
+                    # Create TimelineEvent
+                    parsed_event = TimelineEvent(
+                        id=event.get('sha') or event.get('id'),
+                        node_id=event.get('node_id', ''),
+                        url=event.get('url', ''),
+                        author=author,
+                        eventType=event_type,
+                        created_at=datetime.fromisoformat(event['created_at'].replace('Z', '+00:00')) if event.get('created_at') else None,
+                        updated_at=datetime.fromisoformat(event['updated_at'].replace('Z', '+00:00')) if event.get('updated_at') else None
+                    )
+                    parsed_events.append(parsed_event)
+                except Exception as e:
+                    print(f"Error parsing event: {e}, event data: {event}")
+                    continue
+
+        return parsed_events
 
 
 @dataclass

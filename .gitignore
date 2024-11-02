@@ -5,3 +5,5 @@ dist/
 .cache
 users.txt
 run.env
+# Settings file
+settings.yaml
