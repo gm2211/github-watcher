@@ -22,6 +22,14 @@ def main():
         print("Please check your GitHub token and internet connection.")
         return
 
+    # Add these debug prints:
+    print("\nNeeds Review PRs:")
+    print(prs_awaiting_review_by_user)
+    print("\nChanges Requested PRs:")
+    print(prs_that_need_attention_by_user)
+    print("\nOpen PRs:")
+    print(open_prs_by_user)
+
     # Open the UI and pass the pull requests data
     open_ui(
         open_prs_by_user,

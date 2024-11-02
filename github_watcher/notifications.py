@@ -13,7 +13,12 @@ def tell_app(app: str, command: str):
 
 
 def notify(notifier_app: str, title: str, message: str):
+    # Start the app hidden
+    os.system(f"osascript -e 'tell application \"{notifier_app}\" to run' -e 'tell application \"{notifier_app}\" to set visible to false'")
+    # Send notification
     tell_app(notifier_app, f'notify("{title}", "{message}")')
+    # Kill the app after sending notification
+    kill_notifier()
 
 
 def kill_notifier():

@@ -6,11 +6,21 @@ authors = ["gm2211"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.11,<3.12"
+PyQt6 = "^6.6.1"
+setuptools = "^75.3.0"
 requests = "^2.25.1"
 xxhash = "^3.5.0"
-pygame = "^2.0.1"
+pygame = "2.5.2"
+
+[tool.poetry.group.dev.dependencies]
+py2app = "^0.28.8"
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=1.0.0", "setuptools>=75.3.0"]
 build-backend = "poetry.core.masonry.api"
+
+include = [
+    "github_watcher/Info.plist",
+    "github_watcher/gh_notify.app/**/*"
+]
