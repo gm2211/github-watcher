@@ -107,10 +107,12 @@ def create_pr_card(pr_data, parent=None):
     """)
     
     layout = QVBoxLayout(card)
-    layout.setSpacing(8)
+    layout.setSpacing(4)  # Reduced overall spacing
+    layout.setContentsMargins(10, 8, 10, 8)  # Slightly reduced margins
     
-    # Header section
+    # Header section with title and badges
     header = QHBoxLayout()
+    header.setSpacing(8)
     
     # Title with PR number
     title_text = f"{getattr(pr_data, 'title', 'Untitled')} (#{getattr(pr_data, 'number', '?')})"
@@ -141,19 +143,36 @@ def create_pr_card(pr_data, parent=None):
     header.addLayout(badges_layout)
     layout.addLayout(header)
     
+    # Add a small separator
+    separator = QFrame()
+    separator.setFrameShape(QFrame.Shape.HLine)
+    separator.setStyleSheet("background-color: #404040; margin: 4px 0;")
+    separator.setMaximumHeight(1)
+    layout.addWidget(separator)
+    
     # Info section
-    info_layout = QHBoxLayout()
+    info_container = QFrame()
+    info_layout = QHBoxLayout(info_container)
+    info_layout.setContentsMargins(0, 0, 0, 0)
+    info_layout.setSpacing(4)  # Reduced spacing between elements
     
     # Left info
     left_info = QVBoxLayout()
+    left_info.setSpacing(1)  # Reduced from 2 to 1 for tighter spacing
+    
+    # Create a container for all info items
+    info_items = QFrame()
+    info_items_layout = QVBoxLayout(info_items)
+    info_items_layout.setContentsMargins(0, 0, 0, 0)
+    info_items_layout.setSpacing(1)  # Minimal spacing between items
     
     # Author info
     user = getattr(pr_data, 'user', None)
     if user and hasattr(user, 'login'):
         author_text = f"Author: {user.login}"
         author_label = QLabel(author_text)
-        author_label.setStyleSheet("color: #8b949e; font-size: 11px;")
-        left_info.addWidget(author_label)
+        author_label.setStyleSheet("color: #8b949e; font-size: 11px; padding: 0;")
+        info_items_layout.addWidget(author_label)
     
     # Comments info
     timeline = getattr(pr_data, 'timeline', [])
@@ -163,8 +182,8 @@ def create_pr_card(pr_data, parent=None):
         if comments_count > 0:
             comments_text = f"💬 {comments_count} comment{'s' if comments_count != 1 else ''}"
             comments_label = QLabel(comments_text)
-            comments_label.setStyleSheet("color: #8b949e; font-size: 11px;")
-            left_info.addWidget(comments_label)
+            comments_label.setStyleSheet("color: #8b949e; font-size: 11px; padding: 0;")
+            info_items_layout.addWidget(comments_label)
             
             latest_comment = comments[-1]
             if latest_comment:
@@ -177,14 +196,15 @@ def create_pr_card(pr_data, parent=None):
                     time_text = format_time_diff(time_diff)
                     last_comment_text = f"Last comment by {comment_author} {time_text}"
                     last_comment_label = QLabel(last_comment_text)
-                    last_comment_label.setStyleSheet("color: #8b949e; font-size: 11px;")
-                    left_info.addWidget(last_comment_label)
+                    last_comment_label.setStyleSheet("color: #8b949e; font-size: 11px; padding: 0;")
+                    info_items_layout.addWidget(last_comment_label)
     
+    left_info.addWidget(info_items)
     info_layout.addLayout(left_info)
     
     # Right info
     right_info = QVBoxLayout()
-    right_info.setAlignment(Qt.AlignmentFlag.AlignRight)
+    right_info.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
     
     if updated := getattr(pr_data, 'updated_at', None):
         try:
@@ -204,7 +224,7 @@ def create_pr_card(pr_data, parent=None):
             print(f"Error parsing update date: {e}")
     
     info_layout.addLayout(right_info)
-    layout.addLayout(info_layout)
+    layout.addWidget(info_container)
     
     return card
 
@@ -351,6 +371,101 @@ class PRWatcherUI(QMainWindow):
 
     def update_pr_lists(self, open_prs_by_user, prs_awaiting_review_by_user,
                        prs_that_need_attention_by_user, user_recently_closed_prs_by_user):
+        # Get current open PRs
+        current_open_prs = set()
+        current_closed_prs = set()
+        
+        # Process open PRs and store PR objects for later reference
+        pr_objects = {}  # Store PR objects by number for easy lookup
+        if isinstance(open_prs_by_user, dict):
+            for prs in open_prs_by_user.values():
+                for pr in prs:
+                    pr_num = getattr(pr, 'number', None)
+                    if pr_num:
+                        current_open_prs.add(pr_num)
+                        pr_objects[pr_num] = pr
+        
+        # Process closed PRs
+        if isinstance(user_recently_closed_prs_by_user, dict):
+            for prs in user_recently_closed_prs_by_user.values():
+                for pr in prs:
+                    pr_num = getattr(pr, 'number', None)
+                    if pr_num:
+                        current_closed_prs.add(pr_num)
+                        pr_objects[pr_num] = pr  # Also store closed PRs
+        
+        # Find PRs that were open but are no longer open
+        disappeared_from_open = self.previously_open_prs - current_open_prs
+        
+        # Find newly closed PRs (was in open, now in closed)
+        newly_closed = disappeared_from_open & current_closed_prs
+        
+        # Find new PRs (in open, wasn't before, and wasn't closed)
+        new_prs = current_open_prs - self.previously_open_prs - self.previously_closed_prs
+        
+        # Find reopened PRs (was in closed, now in open)
+        reopened_prs = current_open_prs & self.previously_closed_prs
+        
+        print("\nDebug - PR State Changes:")
+        print(f"Previously Open: {self.previously_open_prs}")
+        print(f"Previously Closed: {self.previously_closed_prs}")
+        print(f"Current Open: {current_open_prs}")
+        print(f"Current Closed: {current_closed_prs}")
+        print(f"Disappeared from Open: {disappeared_from_open}")
+        print(f"Newly Closed: {newly_closed}")
+        print(f"New PRs: {new_prs}")
+        print(f"Reopened PRs: {reopened_prs}")
+        print(f"Notified PRs: {self.notified_prs}")
+        
+        # Reset notifications for state changes
+        self.notified_prs -= reopened_prs  # Reset for reopened PRs
+        self.notified_prs -= disappeared_from_open  # Reset for closed PRs
+        
+        # Send notifications for changes
+        if newly_closed:  # Removed the notified_prs check for closed PRs
+            closed_details = []
+            for pr_num in newly_closed:
+                if pr := pr_objects.get(pr_num):
+                    repo = f"{pr.repo_owner}/{pr.repo_name}"
+                    author = pr.user.login if pr.user else "Unknown"
+                    closed_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
+            
+            if closed_details:
+                notify(NOTIFIER_APP, "PRs Closed", 
+                      "Recently closed PRs:\n" + "\n\n".join(closed_details))
+                self.notified_prs.update(newly_closed)
+        
+        if new_prs - self.notified_prs:
+            new_details = []
+            for pr_num in new_prs - self.notified_prs:
+                if pr := pr_objects.get(pr_num):
+                    repo = f"{pr.repo_owner}/{pr.repo_name}"
+                    author = pr.user.login if pr.user else "Unknown"
+                    new_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
+            
+            if new_details:
+                notify(NOTIFIER_APP, "New PRs", 
+                      "New PRs opened:\n" + "\n\n".join(new_details))
+                self.notified_prs.update(new_prs)
+        
+        if reopened_prs:
+            reopen_details = []
+            for pr_num in reopened_prs:
+                if pr := pr_objects.get(pr_num):
+                    repo = f"{pr.repo_owner}/{pr.repo_name}"
+                    author = pr.user.login if pr.user else "Unknown"
+                    reopen_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
+            
+            if reopen_details:
+                notify(NOTIFIER_APP, "PRs Reopened", 
+                      "PRs reopened:\n" + "\n\n".join(reopen_details))
+                self.notified_prs.update(reopened_prs)
+        
+        # Update tracking sets after notifications
+        self.previously_open_prs = current_open_prs.copy()
+        self.previously_closed_prs = current_closed_prs.copy()
+        
+        # Update UI
         self._update_section(self.needs_review_frame, prs_awaiting_review_by_user)
         self._update_section(self.changes_requested_frame, prs_that_need_attention_by_user)
         self._update_section(self.open_prs_frame, open_prs_by_user)
