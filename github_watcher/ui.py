@@ -225,21 +225,48 @@ def create_pr_card(pr_data, parent=None):
     left_badges.setSpacing(4)
     
     # PR stats badges
-    files_count = getattr(pr_data, 'changed_files', 0)
+    files_count = getattr(pr_data, 'changed_files', 0) or 0
     if files_count > 0:
         files_color = "#28a745" if files_count < 10 else "#f0ad4e" if files_count < 50 else "#dc3545"
         files_badge = create_badge(f"{files_count} files", files_color, min_width=60)
         left_badges.addWidget(files_badge)
     
-    additions = getattr(pr_data, 'additions', 0)
-    deletions = getattr(pr_data, 'deletions', 0)
+    additions = getattr(pr_data, 'additions', 0) or 0
+    deletions = getattr(pr_data, 'deletions', 0) or 0
     if additions > 0 or deletions > 0:
-        changes_badge = create_badge(
-            f"+{additions} -{deletions}", 
-            "#2d2d2d",  # Dark background
-            "#28a745" if additions < deletions else "#dc3545",  # Green if more deletions, red if more additions
-            min_width=80  # Wider badge for changes
-        )
+        # Create a badge with both additions and deletions
+        changes_text = f"  +{additions} -{deletions}  "
+        changes_badge = QFrame()
+        changes_badge.setStyleSheet("""
+            QFrame {
+                background-color: #2d2d2d;
+                border-radius: 12px;
+                min-width: 100px;
+                max-width: 120px;
+                min-height: 22px;
+                max-height: 22px;
+            }
+        """)
+        
+        changes_layout = QHBoxLayout(changes_badge)
+        changes_layout.setContentsMargins(8, 0, 8, 0)
+        changes_layout.setSpacing(4)
+        
+        # Additions label with green text
+        additions_label = QLabel(f"+{additions}")
+        additions_label.setStyleSheet("color: #28a745; font-size: 10px; padding: 0;")
+        changes_layout.addWidget(additions_label)
+        
+        # Separator
+        separator = QLabel("/")
+        separator.setStyleSheet("color: #8b949e; font-size: 10px; padding: 0;")
+        changes_layout.addWidget(separator)
+        
+        # Deletions label with red text
+        deletions_label = QLabel(f"-{deletions}")
+        deletions_label.setStyleSheet("color: #dc3545; font-size: 10px; padding: 0;")
+        changes_layout.addWidget(deletions_label)
+        
         left_badges.addWidget(changes_badge)
     
     badges_layout.addLayout(left_badges)

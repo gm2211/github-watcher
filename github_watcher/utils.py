@@ -41,6 +41,16 @@ def get_pr_data(users):
     open_prs_by_user = github_prs.get_prs(
         state=PRState.OPEN, is_draft=False, max_results=100, users=users
     )
+    
+    # Fetch detailed PR data for each PR
+    for user_prs in open_prs_by_user.values():
+        for pr in user_prs:
+            detailed_pr = github_prs.get_pr_details(pr.repo_owner, pr.repo_name, pr.number)
+            if detailed_pr:
+                pr.changed_files = detailed_pr.get('changed_files')
+                pr.additions = detailed_pr.get('additions')
+                pr.deletions = detailed_pr.get('deletions')
+    
     print("\nDebug - Open PRs fetched:", open_prs_by_user)
     
     prs_awaiting_review_by_user = github_prs.get_prs_that_await_review(

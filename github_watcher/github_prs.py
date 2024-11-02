@@ -282,3 +282,10 @@ class GitHubPRs:
     def _recently_upper_bound(self):
         date_threshold = (datetime.now() + self.recency_threshold).strftime(DATE_TIME_FMT)
         return date_threshold
+
+    def get_pr_details(self, repo_owner, repo_name, pr_number):
+        """Get detailed PR information including file changes"""
+        endpoint = f"/repos/{repo_owner}/{repo_name}/pulls/{pr_number}"
+        response = requests.get(f"{self.base_url}{endpoint}", headers=self.headers)
+        response.raise_for_status()
+        return response.json()
