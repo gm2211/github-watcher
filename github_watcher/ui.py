@@ -21,6 +21,7 @@ class SectionFrame(QFrame):
     def __init__(self, title, parent=None):
         super().__init__(parent)
         self.setObjectName("sectionFrame")
+        self.prs = {}  # Initialize prs attribute
         self.setStyleSheet("""
             QFrame#sectionFrame {
                 background-color: #1e1e1e;
@@ -1028,6 +1029,9 @@ class PRWatcherUI(QMainWindow):
             if widget:
                 widget.deleteLater()
         
+        # Store the PR data in the frame
+        frame.prs = prs  # Add this line to store the PR data
+        
         is_empty = not prs
         if is_empty:
             label = QLabel("No PRs to display")
@@ -1080,13 +1084,34 @@ class PRWatcherUI(QMainWindow):
             dialog = SettingsDialog(self)
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 settings = dialog.get_settings()
+                
+                # Store current PR data before updating settings
+                current_data = (
+                    self.open_prs_frame.prs,
+                    self.needs_review_frame.prs,
+                    self.changes_requested_frame.prs,
+                    self.recently_closed_frame.prs
+                )
+                
                 # Update refresh timer if refresh settings changed
                 current_settings = load_settings()
                 if (settings['refresh'] != current_settings.get('refresh')):
                     self.setup_refresh_timer(settings['refresh'])
-                # Trigger refresh if users changed
-                if settings['users'] != current_settings.get('users', []):
+                
+                # Save new settings
+                save_settings(settings)
+                self.settings = settings  # Update settings in memory
+                
+                # Trigger refresh if users changed or cache settings changed
+                if (settings['users'] != current_settings.get('users', []) or 
+                    settings['cache'] != current_settings.get('cache', {})):
+                    print("\nDebug - Settings changed, triggering immediate refresh...")
                     self.refresh_data()
+                else:
+                    # Even if only thresholds changed, update the UI to reflect new colors/badges
+                    print("\nDebug - Updating UI with new thresholds...")
+                    self.update_pr_lists(*current_data)
+                
         except Exception as e:
             print(f"Error showing settings: {e}")
             QMessageBox.critical(self, "Error", f"Failed to show settings: {str(e)}")

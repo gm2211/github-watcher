@@ -401,13 +401,7 @@ class GitHubPRs:
         return data
 
     def get_pr_data(self, users, force_refresh=False):
-        """
-        Get PR data from GitHub API or cache
-        
-        :param users: List of usernames to get PRs for
-        :param force_refresh: If True, bypass cache and fetch fresh data
-        :return: Tuple of PR data dictionaries
-        """
+        """Get PR data from GitHub API or cache"""
         print("\nDebug - get_pr_data called with:")
         print(f"  - users: {users}")
         print(f"  - force_refresh: {force_refresh}")
@@ -422,29 +416,30 @@ class GitHubPRs:
                     return cached_data
             else:
                 print("Debug - Bypassing cache for manual refresh")
-                
-            # Get the basic PR data
+            
+            # Helper function to enrich PRs with details
+            def enrich_prs_with_details(prs_by_user):
+                for user, user_prs in prs_by_user.items():
+                    print(f"Debug - Processing {len(user_prs)} PRs for user {user}")
+                    for pr in user_prs:
+                        try:
+                            print(f"Debug - Fetching details for PR #{pr.number}")
+                            detailed_pr = self.get_pr_details(pr.repo_owner, pr.repo_name, pr.number)
+                            if detailed_pr:
+                                pr.changed_files = detailed_pr.get('changed_files')
+                                pr.additions = detailed_pr.get('additions')
+                                pr.deletions = detailed_pr.get('deletions')
+                                print(f"Debug - Got details: {pr.changed_files} files, +{pr.additions} -{pr.deletions}")
+                        except Exception as e:
+                            print(f"Warning: Error fetching details for PR #{pr.number}: {e}")
+                return prs_by_user
+            
+            # Get all PR categories
             print("\nDebug - Fetching open PRs...")
             open_prs_by_user = self.get_prs(
                 state=PRState.OPEN, is_draft=False, max_results=100, users=users, force_refresh=force_refresh
             )
             print(f"Debug - Fetched {sum(len(prs) for prs in open_prs_by_user.values())} open PRs")
-            
-            # Fetch detailed PR data for each PR
-            print("\nDebug - Fetching PR details...")
-            for user, user_prs in open_prs_by_user.items():
-                print(f"Debug - Processing {len(user_prs)} PRs for user {user}")
-                for pr in user_prs:
-                    try:
-                        print(f"Debug - Fetching details for PR #{pr.number}")
-                        detailed_pr = self.get_pr_details(pr.repo_owner, pr.repo_name, pr.number)
-                        if detailed_pr:
-                            pr.changed_files = detailed_pr.get('changed_files')
-                            pr.additions = detailed_pr.get('additions')
-                            pr.deletions = detailed_pr.get('deletions')
-                            print(f"Debug - Got details: {pr.changed_files} files, +{pr.additions} -{pr.deletions}")
-                    except Exception as e:
-                        print(f"Warning: Error fetching details for PR #{pr.number}: {e}")
             
             print("\nDebug - Fetching PRs awaiting review...")
             prs_awaiting_review_by_user = self.get_prs_that_await_review(
@@ -463,43 +458,57 @@ class GitHubPRs:
                 users, max_results=100, force_refresh=force_refresh
             )
             print(f"Debug - Fetched {sum(len(prs) for prs in user_recently_closed_prs_by_user.values())} recently closed PRs")
-
-            # Enrich all PR sets with timeline data
-            print("\nDebug - Starting PR enrichment...")
-            open_prs_by_user = self._enrich_prs_with_timeline(open_prs_by_user)
-            prs_awaiting_review_by_user = self._enrich_prs_with_timeline(prs_awaiting_review_by_user)
-            prs_that_need_attention_by_user = self._enrich_prs_with_timeline(prs_that_need_attention_by_user)
-            user_recently_closed_prs_by_user = self._enrich_prs_with_timeline(user_recently_closed_prs_by_user)
+            
+            # Enrich all PR categories with details
+            print("\nDebug - Enriching PRs with details...")
+            open_prs_by_user = enrich_prs_with_details(open_prs_by_user)
+            prs_awaiting_review_by_user = enrich_prs_with_details(prs_awaiting_review_by_user)
+            prs_that_need_attention_by_user = enrich_prs_with_details(prs_that_need_attention_by_user)
+            user_recently_closed_prs_by_user = enrich_prs_with_details(user_recently_closed_prs_by_user)
+            
+            # Enrich all PR categories with timeline data
+            print("\nDebug - Enriching PRs with timeline data...")
+            open_prs_by_user = self._enrich_prs_with_timeline(open_prs_by_user, force_refresh)
+            prs_awaiting_review_by_user = self._enrich_prs_with_timeline(prs_awaiting_review_by_user, force_refresh)
+            prs_that_need_attention_by_user = self._enrich_prs_with_timeline(prs_that_need_attention_by_user, force_refresh)
+            user_recently_closed_prs_by_user = self._enrich_prs_with_timeline(user_recently_closed_prs_by_user, force_refresh)
             print("Debug - Completed PR enrichment")
-
+            
+            # Remove duplicates - PRs should only appear in one category
+            print("\nDebug - Removing duplicate PRs...")
+            for user in users:
+                if user in prs_awaiting_review_by_user:
+                    review_pr_numbers = {pr.number for pr in prs_awaiting_review_by_user[user]}
+                    if user in open_prs_by_user:
+                        open_prs_by_user[user] = [pr for pr in open_prs_by_user[user] 
+                                                if pr.number not in review_pr_numbers]
+            
             data = (
                 open_prs_by_user,
                 prs_awaiting_review_by_user,
                 prs_that_need_attention_by_user,
                 user_recently_closed_prs_by_user,
             )
-
+            
             # Only cache if data was successfully fetched
             if any(data):
                 print("\nDebug - Caching fresh data")
                 self.cache_data(users, data)
             else:
                 print("\nDebug - No data to cache")
-
+            
             return data
             
         except Exception as e:
             print(f"\nError in get_pr_data: {e}")
             print("Debug - Stack trace:")
-            traceback.print_exc()  # Print the full stack trace
+            traceback.print_exc()
             if not force_refresh:
-                # Only try cache on error if not forcing refresh
                 print("Debug - Trying cache after error...")
                 cached_data = self.get_cached_data(users)
                 if cached_data:
                     print("Debug - Using cached data after error")
                     return cached_data
-            # Return None to indicate error
             print("Debug - No cache available or force refresh, returning None")
             return None
 
