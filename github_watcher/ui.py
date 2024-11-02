@@ -72,11 +72,12 @@ class SectionFrame(QFrame):
         
         # Content container
         self.content_container = QFrame()
-        self.content_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.content_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.content_container.setStyleSheet("background: transparent;")
         self.content_layout = QVBoxLayout(self.content_container)
         self.content_layout.setContentsMargins(0, 5, 0, 0)
         self.content_layout.setSpacing(5)
+        self.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         
         self.main_layout.addWidget(self.content_container)
         
@@ -84,7 +85,9 @@ class SectionFrame(QFrame):
         header_container.mousePressEvent = self.toggle_content
         header_container.setCursor(Qt.CursorShape.PointingHandCursor)
         
+        # Start collapsed
         self.is_expanded = True
+        self.toggle_content()  # This will collapse it initially
     
     def toggle_content(self, event=None):
         self.is_expanded = not self.is_expanded
@@ -145,6 +148,7 @@ def create_pr_card(pr_data, parent=None):
     
     card = QFrame(parent)
     card.setObjectName("prCard")
+    card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
     card.setStyleSheet("""
         QFrame#prCard {
             background-color: #2d2d2d;
@@ -539,10 +543,12 @@ class PRWatcherUI(QMainWindow):
         if is_empty:
             label = QLabel("No PRs to display")
             frame.layout().addWidget(label)
-            frame.set_empty(True)
+            # Auto-collapse if empty
+            if frame.is_expanded:
+                frame.toggle_content()
             return
         
-        # If not empty, expand the section
+        # Auto-expand if not empty and was collapsed
         if not frame.is_expanded:
             frame.toggle_content()
         
@@ -563,6 +569,15 @@ class PRWatcherUI(QMainWindow):
             prs = [pr for pr in prs if getattr(pr, 'state', '') == 'open' and not getattr(pr, 'merged_at', None)]
         elif frame.title_label.text() == "Recently Closed":
             prs = [pr for pr in prs if getattr(pr, 'state', '') == 'closed' or getattr(pr, 'merged_at', None)]
+        
+        # Check if section should be empty after filtering
+        if not prs:
+            label = QLabel("No PRs to display")
+            frame.layout().addWidget(label)
+            # Auto-collapse if empty after filtering
+            if frame.is_expanded:
+                frame.toggle_content()
+            return
         
         # Add PR cards
         for pr in prs:
