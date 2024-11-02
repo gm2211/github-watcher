@@ -21,8 +21,11 @@ class SectionFrame(QFrame):
         self.setStyleSheet("""
             QFrame#sectionFrame {
                 background-color: #1e1e1e;
-                border-radius: 10px;
+                border-radius: 12px;
                 margin: 5px;
+            }
+            QFrame {
+                background: transparent;
             }
         """)
         
@@ -145,38 +148,36 @@ class SectionFrame(QFrame):
         return self.content_layout
 
 
-def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45):
+def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45, opacity=1.0):
     badge = QFrame(parent)
-    # Make background color semi-transparent by adding alpha
+    
+    # Convert hex color to rgba with specified opacity
     if bg_color.startswith('#'):
         r = int(bg_color[1:3], 16)
         g = int(bg_color[3:5], 16)
         b = int(bg_color[5:7], 16)
-        bg_color = f"rgba({r}, {g}, {b}, 0.5)"  # Convert hex to rgba
+        bg_color = f"rgba({r}, {g}, {b}, {opacity})"
     
     badge.setStyleSheet(f"""
         QFrame {{
             background-color: {bg_color};
-            border-radius: 12px;
-            padding: 2px 6px;
+            border-radius: 10px;
             min-width: {min_width}px;
             max-width: {min_width + 20}px;
-            min-height: 22px;
-            max-height: 22px;
-        }}
-        QFrame > * {{
-            background: transparent;
+            min-height: 20px;
+            max-height: 20px;
+            padding: 0px 6px;
         }}
         QLabel {{
+            background: transparent;
             color: {fg_color};
             font-size: 10px;
-            padding: 0;
-            background: transparent;
+            padding: 0px;
         }}
     """)
     
     layout = QHBoxLayout(badge)
-    layout.setContentsMargins(2, 0, 2, 0)
+    layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(0)
     
     label = QLabel(text)
@@ -199,9 +200,16 @@ def create_pr_card(pr_data, settings, parent=None):
     card.setStyleSheet("""
         QFrame#prCard {
             background-color: #2d2d2d;
-            border-radius: 6px;
+            border-radius: 12px;
             padding: 10px;
             margin: 3px 0;
+        }
+        QFrame {
+            background: transparent;
+            border-radius: 12px;
+        }
+        QLabel {
+            background: transparent;
         }
     """)
     
@@ -217,7 +225,7 @@ def create_pr_card(pr_data, settings, parent=None):
     title_text = f"{getattr(pr_data, 'title', 'Untitled')} (#{getattr(pr_data, 'number', '?')})"
     title = QLabel(title_text)
     title.setFont(QFont("", 13, QFont.Weight.Bold))
-    title.setStyleSheet("color: #58a6ff; text-decoration: underline;")
+    title.setStyleSheet("color: #58a6ff; text-decoration: underline; background: transparent;")
     title.setCursor(Qt.CursorShape.PointingHandCursor)
     
     # Create a proper event handler for the click
@@ -231,7 +239,7 @@ def create_pr_card(pr_data, settings, parent=None):
     # Add repo info
     repo_text = f"{pr_data.repo_owner}/{pr_data.repo_name}"
     repo_label = QLabel(repo_text)
-    repo_label.setStyleSheet("color: #8b949e; font-size: 11px;")
+    repo_label.setStyleSheet("color: #8b949e; font-size: 11px; background: transparent;")
     header.addWidget(repo_label)
     
     # Badges
@@ -249,21 +257,40 @@ def create_pr_card(pr_data, settings, parent=None):
             else "#f0ad4e" if files_count < files_danger 
             else "#dc3545"
         )
-        files_badge = create_badge(f"{files_count} files", files_color, min_width=60)
+        files_badge = create_badge(f"{files_count} files", files_color, min_width=60, opacity=0.7)
         badges_layout.addWidget(files_badge)
     
     additions = getattr(pr_data, 'additions', 0) or 0
     deletions = getattr(pr_data, 'deletions', 0) or 0
     if additions > 0 or deletions > 0:
-        changes_badge = create_changes_badge(additions, deletions, settings)
+        total_changes = additions + deletions
+        warning_level = settings.get('thresholds', {}).get('lines', {}).get('warning', 500)
+        danger_level = settings.get('thresholds', {}).get('lines', {}).get('danger', 1000)
+        
+        changes_color = (
+            "#28a745" if total_changes < warning_level
+            else "#f0ad4e" if total_changes < danger_level
+            else "#dc3545"
+        )
+        
+        changes_badge = create_badge(
+            f"+{additions} -{deletions}",
+            changes_color,
+            min_width=80,
+            opacity=0.7
+        )
         badges_layout.addWidget(changes_badge)
     
     badges_layout.addStretch()  # Push status badges to the right
     
-    # Status badges
+    # Right side badges container
+    right_badges = QHBoxLayout()
+    right_badges.setSpacing(4)
+    
+    # Status badges (full opacity)
     if getattr(pr_data, 'draft', False):
-        draft_badge = create_badge("DRAFT", "#6c757d")
-        badges_layout.addWidget(draft_badge)
+        draft_badge = create_badge("DRAFT", "#6c757d", opacity=1.0)  # Gray
+        right_badges.addWidget(draft_badge)
     
     # Status badge colors
     MERGED_COLOR = "#6f42c1"  # Purple
@@ -271,12 +298,15 @@ def create_pr_card(pr_data, settings, parent=None):
     OPEN_COLOR = "#28a745"    # Green
     
     if getattr(pr_data, 'merged_at', None):
-        status_badge = create_badge("MERGED", MERGED_COLOR)
+        status_badge = create_badge("MERGED", MERGED_COLOR, opacity=1.0)
     elif getattr(pr_data, 'state', '') == 'closed':
-        status_badge = create_badge("CLOSED", CLOSED_COLOR)
+        status_badge = create_badge("CLOSED", CLOSED_COLOR, opacity=1.0)
     else:
-        status_badge = create_badge("OPEN", OPEN_COLOR)
-    badges_layout.addWidget(status_badge)
+        status_badge = create_badge("OPEN", OPEN_COLOR, opacity=1.0)
+    right_badges.addWidget(status_badge)
+    
+    # Add right badges to main badges layout
+    badges_layout.addLayout(right_badges)
     
     # Add badges layout to header
     header.addLayout(badges_layout)
@@ -976,22 +1006,23 @@ def create_changes_badge(additions, deletions, settings):
     changes_badge.setStyleSheet(f"""
         QFrame {{
             background: {bg_color};
-            border-radius: 12px;
+            border-radius: 10px;
             min-width: 100px;
             max-width: 120px;
-            min-height: 22px;
-            max-height: 22px;
-            padding: 0px 8px;
+            min-height: 20px;
+            max-height: 20px;
+            padding: 0px 6px;
         }}
         QLabel {{
             background: transparent;
             color: white;
             font-size: 10px;
+            padding: 0px;
         }}
     """)
     
     layout = QHBoxLayout(changes_badge)
-    layout.setContentsMargins(8, 0, 8, 0)
+    layout.setContentsMargins(6, 0, 6, 0)
     layout.setSpacing(4)
     
     # Show additions in green text
