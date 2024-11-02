@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 import re
 import traceback
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 import requests
 
@@ -16,7 +18,8 @@ class GitHubPRs:
             github_token,
             recency_threshold=timedelta(days=1),
             cache_dir=".cache",
-            cache_ttl=timedelta(hours=1)
+            cache_ttl=timedelta(hours=1),
+            max_workers=4
     ):
         self.base_url = "https://api.github.com"
         self.headers = {
@@ -26,6 +29,8 @@ class GitHubPRs:
         self.recency_threshold = recency_threshold
         self.cache = Cache(cache_dir)
         self.cache_ttl = cache_ttl
+        self.max_workers = max_workers
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
 
     def get_prs(
             self,
@@ -400,11 +405,31 @@ class GitHubPRs:
         
         return data
 
-    def get_pr_data(self, users, force_refresh=False):
-        """Get PR data from GitHub API or cache"""
+    def _fetch_user_prs(self, user, query, max_results):
+        """Helper method to fetch PRs for a single user"""
+        user_query = f"{query} author:{user}"
+        results = self._search_issues(user_query, max_results)
+        return user, results
+
+    def _fetch_pr_details(self, pr):
+        """Helper method to fetch details for a single PR"""
+        try:
+            details = self.get_pr_details(pr.repo_owner, pr.repo_name, pr.number)
+            if details:
+                pr.changed_files = details.get('changed_files')
+                pr.additions = details.get('additions')
+                pr.deletions = details.get('deletions')
+            return pr
+        except Exception as e:
+            print(f"Warning: Error fetching details for PR #{pr.number}: {e}")
+            return pr
+
+    def get_pr_data(self, users, force_refresh=False, section=None):
+        """Get PR data from GitHub API or cache with parallel processing"""
         print("\nDebug - get_pr_data called with:")
         print(f"  - users: {users}")
         print(f"  - force_refresh: {force_refresh}")
+        print(f"  - section: {section}")
         
         try:
             # Only check cache if not forcing refresh
@@ -412,104 +437,73 @@ class GitHubPRs:
                 print("Debug - Checking cache...")
                 cached_data = self.get_cached_data(users)
                 if cached_data:
+                    if section:
+                        # Return only the requested section from cache
+                        section_map = {
+                            'open': (cached_data[0], {}, {}, {}),
+                            'review': ({}, cached_data[1], {}, {}),
+                            'attention': ({}, {}, cached_data[2], {}),
+                            'closed': ({}, {}, {}, cached_data[3])
+                        }
+                        return section_map.get(section, cached_data)
                     print("Debug - Using cached data")
                     return cached_data
             else:
                 print("Debug - Bypassing cache for manual refresh")
             
-            # Helper function to enrich PRs with details
-            def enrich_prs_with_details(prs_by_user):
-                for user, user_prs in prs_by_user.items():
-                    print(f"Debug - Processing {len(user_prs)} PRs for user {user}")
-                    for pr in user_prs:
-                        try:
-                            print(f"Debug - Fetching details for PR #{pr.number}")
-                            detailed_pr = self.get_pr_details(pr.repo_owner, pr.repo_name, pr.number)
-                            if detailed_pr:
-                                pr.changed_files = detailed_pr.get('changed_files')
-                                pr.additions = detailed_pr.get('additions')
-                                pr.deletions = detailed_pr.get('deletions')
-                                print(f"Debug - Got details: {pr.changed_files} files, +{pr.additions} -{pr.deletions}")
-                        except Exception as e:
-                            print(f"Warning: Error fetching details for PR #{pr.number}: {e}")
-                return prs_by_user
-            
-            # Get all PR categories
-            print("\nDebug - Fetching open PRs...")
-            open_prs_by_user = self.get_prs(
-                state=PRState.OPEN, is_draft=False, max_results=100, users=users, force_refresh=force_refresh
-            )
-            print(f"Debug - Fetched {sum(len(prs) for prs in open_prs_by_user.values())} open PRs")
-            
-            print("\nDebug - Fetching PRs awaiting review...")
-            prs_awaiting_review_by_user = self.get_prs_that_await_review(
-                max_results=50, users=users, force_refresh=force_refresh
-            )
-            print(f"Debug - Fetched {sum(len(prs) for prs in prs_awaiting_review_by_user.values())} PRs awaiting review")
-            
-            print("\nDebug - Fetching PRs needing attention...")
-            prs_that_need_attention_by_user = self.get_prs_that_need_attention(
-                max_results=75, users=users, force_refresh=force_refresh
-            )
-            print(f"Debug - Fetched {sum(len(prs) for prs in prs_that_need_attention_by_user.values())} PRs needing attention")
-            
-            print("\nDebug - Fetching recently closed PRs...")
-            user_recently_closed_prs_by_user = self.get_recently_closed_prs_by_users(
-                users, max_results=100, force_refresh=force_refresh
-            )
-            print(f"Debug - Fetched {sum(len(prs) for prs in user_recently_closed_prs_by_user.values())} recently closed PRs")
-            
-            # Enrich all PR categories with details
-            print("\nDebug - Enriching PRs with details...")
-            open_prs_by_user = enrich_prs_with_details(open_prs_by_user)
-            prs_awaiting_review_by_user = enrich_prs_with_details(prs_awaiting_review_by_user)
-            prs_that_need_attention_by_user = enrich_prs_with_details(prs_that_need_attention_by_user)
-            user_recently_closed_prs_by_user = enrich_prs_with_details(user_recently_closed_prs_by_user)
-            
-            # Enrich all PR categories with timeline data
-            print("\nDebug - Enriching PRs with timeline data...")
-            open_prs_by_user = self._enrich_prs_with_timeline(open_prs_by_user, force_refresh)
-            prs_awaiting_review_by_user = self._enrich_prs_with_timeline(prs_awaiting_review_by_user, force_refresh)
-            prs_that_need_attention_by_user = self._enrich_prs_with_timeline(prs_that_need_attention_by_user, force_refresh)
-            user_recently_closed_prs_by_user = self._enrich_prs_with_timeline(user_recently_closed_prs_by_user, force_refresh)
-            print("Debug - Completed PR enrichment")
-            
-            # Remove duplicates - PRs should only appear in one category
-            print("\nDebug - Removing duplicate PRs...")
-            for user in users:
-                if user in prs_awaiting_review_by_user:
-                    review_pr_numbers = {pr.number for pr in prs_awaiting_review_by_user[user]}
-                    if user in open_prs_by_user:
-                        open_prs_by_user[user] = [pr for pr in open_prs_by_user[user] 
-                                                if pr.number not in review_pr_numbers]
-            
+            # Fetch PRs for all users in parallel
+            results = {}
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                for section_name, query in [
+                    ('open', "is:pr is:open draft:false"),
+                    ('review', "is:pr is:open review:none comments:0"),
+                    ('attention', f"is:pr is:open ({self._not_recently_updated()} OR {self._recently_created()}) -is:draft"),
+                    ('closed', f"is:pr is:closed closed:>={self._recent_date()}")
+                ]:
+                    if section and section != section_name:
+                        continue
+                        
+                    # Fetch PRs for all users in parallel
+                    futures = [
+                        executor.submit(self._fetch_user_prs, user, query, 100)
+                        for user in users
+                    ]
+                    
+                    section_results = {}
+                    for future in futures:
+                        user, user_prs = future.result()
+                        if user_prs:
+                            section_results[user] = user_prs
+                            
+                            # Fetch PR details in parallel
+                            detail_futures = [
+                                executor.submit(self._fetch_pr_details, pr)
+                                for pr in user_prs
+                            ]
+                            
+                            # Update PRs with details as they complete
+                            for detail_future in detail_futures:
+                                pr = detail_future.result()
+                    
+                    results[section_name] = section_results
+
+            # Create final data structure
             data = (
-                open_prs_by_user,
-                prs_awaiting_review_by_user,
-                prs_that_need_attention_by_user,
-                user_recently_closed_prs_by_user,
+                results.get('open', {}),
+                results.get('review', {}),
+                results.get('attention', {}),
+                results.get('closed', {})
             )
-            
-            # Only cache if data was successfully fetched
-            if any(data):
-                print("\nDebug - Caching fresh data")
+
+            # Cache if we have all sections
+            if section is None and any(data):
                 self.cache_data(users, data)
-            else:
-                print("\nDebug - No data to cache")
-            
+
             return data
-            
+
         except Exception as e:
-            print(f"\nError in get_pr_data: {e}")
-            print("Debug - Stack trace:")
+            print(f"Error in get_pr_data: {e}")
             traceback.print_exc()
-            if not force_refresh:
-                print("Debug - Trying cache after error...")
-                cached_data = self.get_cached_data(users)
-                if cached_data:
-                    print("Debug - Using cached data after error")
-                    return cached_data
-            print("Debug - No cache available or force refresh, returning None")
             return None
 
     def _enrich_prs_with_timeline(self, prs_by_user, force_refresh=False):

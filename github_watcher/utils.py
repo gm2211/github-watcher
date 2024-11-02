@@ -2,7 +2,6 @@ from ui import load_settings
 
 
 def read_users_from_file():
-    # Load from settings.yaml instead of users.txt
     settings = load_settings()
     
     if not settings or not settings.get('users'):

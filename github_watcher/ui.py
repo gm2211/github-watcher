@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QDialogButtonBox, QPlainTextEdit, QMessageBox
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QIcon, QFont
+from PyQt6.QtGui import QIcon, QFont, QTransform
 import webbrowser
 from datetime import datetime, timezone, timedelta
 import platform
@@ -222,8 +222,12 @@ def create_pr_card(pr_data, settings, parent=None):
     layout.setContentsMargins(10, 8, 10, 8)  # Slightly reduced margins
     
     # Header section with title and badges
-    header = QHBoxLayout()
-    header.setSpacing(8)
+    header = QVBoxLayout()
+    header.setSpacing(4)
+    
+    # Top row with title and repo info
+    top_row = QHBoxLayout()
+    top_row.setSpacing(8)
     
     # Title with PR number
     title_text = f"{getattr(pr_data, 'title', 'Untitled')} (#{getattr(pr_data, 'number', '?')})"
@@ -231,6 +235,7 @@ def create_pr_card(pr_data, settings, parent=None):
     title.setFont(QFont("", 13, QFont.Weight.Bold))
     title.setStyleSheet("color: #58a6ff; text-decoration: underline; background: transparent;")
     title.setCursor(Qt.CursorShape.PointingHandCursor)
+    title.setWordWrap(True)
     
     # Create a proper event handler for the click
     if url := getattr(pr_data, 'html_url', None):
@@ -238,19 +243,25 @@ def create_pr_card(pr_data, settings, parent=None):
             webbrowser.open(url)
         title.mousePressEvent = open_url
     
-    header.addWidget(title)
+    top_row.addWidget(title)
     
     # Add repo info
     repo_text = f"{pr_data.repo_owner}/{pr_data.repo_name}"
     repo_label = QLabel(repo_text)
     repo_label.setStyleSheet("color: #8b949e; font-size: 11px; background: transparent;")
-    header.addWidget(repo_label)
+    repo_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+    top_row.addWidget(repo_label)
     
-    # Badges
+    header.addLayout(top_row)
+    
+    # Badges row
     badges_layout = QHBoxLayout()
     badges_layout.setSpacing(4)
     
     # Left side badges (files and changes)
+    left_badges = QHBoxLayout()
+    left_badges.setSpacing(4)
+    
     files_count = getattr(pr_data, 'changed_files', 0) or 0
     if files_count > 0:
         files_warning = settings.get('thresholds', {}).get('files', {}).get('warning', 10)
@@ -262,7 +273,7 @@ def create_pr_card(pr_data, settings, parent=None):
             else "#dc3545"
         )
         files_badge = create_badge(f"{files_count} files", files_color, min_width=60, opacity=0.7)
-        badges_layout.addWidget(files_badge)
+        left_badges.addWidget(files_badge)
     
     additions = getattr(pr_data, 'additions', 0) or 0
     deletions = getattr(pr_data, 'deletions', 0) or 0
@@ -283,11 +294,12 @@ def create_pr_card(pr_data, settings, parent=None):
             min_width=80,
             opacity=0.7
         )
-        badges_layout.addWidget(changes_badge)
+        left_badges.addWidget(changes_badge)
     
+    badges_layout.addLayout(left_badges)
     badges_layout.addStretch()  # Push status badges to the right
     
-    # Right side badges container
+    # Right side badges
     right_badges = QHBoxLayout()
     right_badges.setSpacing(4)
     
@@ -309,10 +321,7 @@ def create_pr_card(pr_data, settings, parent=None):
         status_badge = create_badge("OPEN", OPEN_COLOR, opacity=1.0)
     right_badges.addWidget(status_badge)
     
-    # Add right badges to main badges layout
     badges_layout.addLayout(right_badges)
-    
-    # Add badges layout to header
     header.addLayout(badges_layout)
     layout.addLayout(header)
     
@@ -733,19 +742,20 @@ class RefreshWorker(QThread):
     finished = pyqtSignal(tuple)  # Signal to emit when refresh is complete
     error = pyqtSignal(str)       # Signal to emit when an error occurs
     
-    def __init__(self, github_prs, users):
+    def __init__(self, github_prs, users, section=None):
         super().__init__()
         self.github_prs = github_prs
         self.users = users
+        self.section = section
         
     def run(self):
         try:
-            print("\nDebug - Worker: Fetching fresh PR data...")
-            new_data = self.github_prs.get_pr_data(self.users, force_refresh=True)
+            print(f"\nDebug - Worker: Fetching {self.section} PR data...")
+            new_data = self.github_prs.get_pr_data(self.users, force_refresh=True, section=self.section)
             if new_data is not None:
                 self.finished.emit(new_data)
             else:
-                self.error.emit("Refresh failed, no data returned")
+                self.error.emit(f"Refresh failed for section {self.section}, no data returned")
         except Exception as e:
             self.error.emit(str(e))
 
@@ -772,10 +782,29 @@ class PRWatcherUI(QMainWindow):
         # Create header with buttons
         header_layout = QHBoxLayout()
         
+        # Left side: spinner and title
+        left_layout = QHBoxLayout()
+        
+        # Spinner
+        self.spinner_label = QLabel("⟳")
+        self.spinner_label.setFixedWidth(20)
+        self.spinner_label.setStyleSheet("""
+            QLabel {
+                color: #0d6efd;
+                font-size: 16px;
+                padding: 0 5px;
+            }
+        """)
+        self.spinner_label.hide()  # Hidden by default
+        left_layout.addWidget(self.spinner_label)
+        
         # Title
         title = QLabel("GitHub PR Watcher")
         title.setFont(QFont("", 16, QFont.Weight.Bold))
-        header_layout.addWidget(title)
+        left_layout.addWidget(title)
+        
+        header_layout.addLayout(left_layout)
+        header_layout.addStretch()  # Push buttons to the right
         
         # Buttons container
         buttons_layout = QHBoxLayout()
@@ -906,10 +935,6 @@ class PRWatcherUI(QMainWindow):
             }
         """)
         
-        # Create loading overlay
-        self.loading_overlay = LoadingOverlay(central_widget)
-        self.loading_overlay.hide()
-        
         # Initialize worker to None
         self.refresh_worker = None
         self.consecutive_failures = 0
@@ -924,33 +949,47 @@ class PRWatcherUI(QMainWindow):
             return
             
         print("\nDebug - Starting refresh...")
-        self.loading_overlay.show()
+        self.spinner_label.show()
+        self.spinner_timer.start()
         
-        # Create and start worker thread
-        self.refresh_worker = RefreshWorker(self.github_prs, self.settings.get('users', []))
-        self.refresh_worker.finished.connect(self.handle_refresh_success)
-        self.refresh_worker.error.connect(self.handle_refresh_error)
-        self.refresh_worker.finished.connect(self.cleanup_worker)
-        self.refresh_worker.error.connect(self.cleanup_worker)
-        self.refresh_worker.start()
+        # Create and start worker threads for each section
+        sections = ['review', 'open', 'attention', 'closed']
+        for section in sections:
+            worker = RefreshWorker(self.github_prs, self.settings.get('users', []), section)
+            worker.finished.connect(lambda data, s=section: self.handle_section_refresh(s, data))
+            worker.error.connect(self.handle_refresh_error)
+            worker.start()
 
-    def handle_refresh_success(self, new_data):
-        print("Debug - Refresh completed successfully")
-        self.update_pr_lists(*new_data)
-        self.consecutive_failures = 0
-        self.loading_overlay.hide()
+    def handle_section_refresh(self, section, data):
+        """Handle refresh completion for a specific section"""
+        print(f"Debug - Section {section} refresh completed")
+        
+        # Map section names to data indices and frames
+        section_map = {
+            'open': (0, self.open_prs_frame),
+            'review': (1, self.needs_review_frame),
+            'attention': (2, self.changes_requested_frame),
+            'closed': (3, self.recently_closed_frame)
+        }
+        
+        if section in section_map:
+            idx, frame = section_map[section]
+            # Create a tuple with empty dicts except for the refreshed section
+            section_data = tuple({} if i != idx else data[idx] for i in range(4))
+            self.update_pr_lists(*section_data)
+        
+        # Check if all sections are loaded
+        if all(frame.prs for frame in [self.open_prs_frame, self.needs_review_frame, 
+                                     self.changes_requested_frame, self.recently_closed_frame]):
+            self.spinner_label.hide()
+            self.spinner_timer.stop()
 
     def handle_refresh_error(self, error_msg):
         print(f"Error refreshing data: {error_msg}")
         self.consecutive_failures += 1
         print(f"Consecutive failures: {self.consecutive_failures}")
-        self.loading_overlay.hide()
-
-    def cleanup_worker(self):
-        if self.refresh_worker:
-            self.refresh_worker.quit()
-            self.refresh_worker.wait()
-            self.refresh_worker = None
+        self.spinner_label.hide()
+        self.spinner_timer.stop()
 
     def closeEvent(self, event):
         # Clean up worker thread when closing
@@ -1126,7 +1165,22 @@ class PRWatcherUI(QMainWindow):
                 save_settings(settings)
                 self.settings = settings  # Update settings in memory
                 
-                # Compare refresh settings properly
+                # Check if users have changed
+                old_users = set(current_settings.get('users', []))
+                new_users = set(settings.get('users', []))
+                users_changed = old_users != new_users
+                
+                if users_changed:
+                    print("\nDebug - Users changed:")
+                    print(f"  Old users: {sorted(old_users)}")
+                    print(f"  New users: {sorted(new_users)}")
+                    print(f"  Added: {sorted(new_users - old_users)}")
+                    print(f"  Removed: {sorted(old_users - new_users)}")
+                    print("Debug - Triggering immediate refresh for user changes...")
+                    self.refresh_data()
+                    return  # Skip other checks since we're doing a full refresh
+                
+                # Compare refresh settings
                 old_refresh = current_settings.get('refresh', {})
                 new_refresh = settings.get('refresh', {})
                 if (old_refresh.get('value') != new_refresh.get('value') or 
@@ -1136,10 +1190,9 @@ class PRWatcherUI(QMainWindow):
                     print(f"  New: {new_refresh.get('value')} {new_refresh.get('unit')}")
                     self.setup_refresh_timer(new_refresh)
                 
-                # Compare users and cache settings
-                if (settings.get('users') != current_settings.get('users', []) or 
-                    settings.get('cache') != current_settings.get('cache', {})):
-                    print("\nDebug - Users or cache settings changed, triggering immediate refresh...")
+                # Compare cache settings
+                if settings.get('cache') != current_settings.get('cache', {}):
+                    print("\nDebug - Cache settings changed, triggering refresh...")
                     self.refresh_data()
                 else:
                     # Even if only thresholds changed, update the UI to reflect new colors/badges
@@ -1188,6 +1241,22 @@ class PRWatcherUI(QMainWindow):
         # Keep loading overlay centered
         if hasattr(self, 'loading_overlay'):
             self.loading_overlay.setGeometry(self.centralWidget().rect())
+
+    def rotate_spinner(self):
+        self.spinner_rotation = (self.spinner_rotation + 30) % 360
+        transform = QTransform()
+        transform.rotate(self.spinner_rotation)
+        self.spinner_label.setStyleSheet(f"""
+            QLabel {{
+                color: #0d6efd;
+                font-size: 16px;
+                padding: 0 5px;
+            }}
+        """)
+        # Use Qt's transform property for smoother rotation
+        self.spinner_label.setProperty("rotation", self.spinner_rotation)
+        self.spinner_label.style().unpolish(self.spinner_label)
+        self.spinner_label.style().polish(self.spinner_label)
 
 
 def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
