@@ -207,8 +207,13 @@ def create_pr_card(pr_data, parent=None):
     title.setFont(QFont("", 13, QFont.Weight.Bold))
     title.setStyleSheet("color: #58a6ff; text-decoration: underline;")
     title.setCursor(Qt.CursorShape.PointingHandCursor)
+    
+    # Create a proper event handler for the click
     if url := getattr(pr_data, 'html_url', None):
-        title.mousePressEvent = lambda _: webbrowser.open(url)
+        def open_url(event):
+            webbrowser.open(url)
+        title.mousePressEvent = open_url
+    
     header.addWidget(title)
     
     # Badges
@@ -660,7 +665,11 @@ class PRWatcherUI(QMainWindow):
             # Find state changes
             disappeared_from_open = self.previously_open_prs - current_open_prs
             newly_closed = disappeared_from_open & current_closed_prs
+            
+            # A PR is new only if it wasn't previously open AND wasn't previously closed
             new_prs = current_open_prs - self.previously_open_prs - self.previously_closed_prs
+            
+            # A PR is reopened if it was previously closed and is now open
             reopened_prs = current_open_prs & self.previously_closed_prs
             
             print("\nDebug - PR State Changes:")
