@@ -147,6 +147,13 @@ class SectionFrame(QFrame):
 
 def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45):
     badge = QFrame(parent)
+    # Make background color semi-transparent by adding alpha
+    if bg_color.startswith('#'):
+        r = int(bg_color[1:3], 16)
+        g = int(bg_color[3:5], 16)
+        b = int(bg_color[5:7], 16)
+        bg_color = f"rgba({r}, {g}, {b}, 0.5)"  # Convert hex to rgba
+    
     badge.setStyleSheet(f"""
         QFrame {{
             background-color: {bg_color};
@@ -157,10 +164,14 @@ def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45):
             min-height: 22px;
             max-height: 22px;
         }}
+        QFrame > * {{
+            background: transparent;
+        }}
         QLabel {{
             color: {fg_color};
             font-size: 10px;
             padding: 0;
+            background: transparent;
         }}
     """)
     
@@ -228,10 +239,6 @@ def create_pr_card(pr_data, settings, parent=None):
     badges_layout.setSpacing(4)
     
     # Left side badges (files and changes)
-    left_badges = QHBoxLayout()
-    left_badges.setSpacing(4)
-    
-    # PR stats badges
     files_count = getattr(pr_data, 'changed_files', 0) or 0
     if files_count > 0:
         files_warning = settings.get('thresholds', {}).get('files', {}).get('warning', 10)
@@ -243,25 +250,20 @@ def create_pr_card(pr_data, settings, parent=None):
             else "#dc3545"
         )
         files_badge = create_badge(f"{files_count} files", files_color, min_width=60)
-        left_badges.addWidget(files_badge)
+        badges_layout.addWidget(files_badge)
     
     additions = getattr(pr_data, 'additions', 0) or 0
     deletions = getattr(pr_data, 'deletions', 0) or 0
     if additions > 0 or deletions > 0:
         changes_badge = create_changes_badge(additions, deletions, settings)
-        left_badges.addWidget(changes_badge)
+        badges_layout.addWidget(changes_badge)
     
-    badges_layout.addLayout(left_badges)
     badges_layout.addStretch()  # Push status badges to the right
-    
-    # Right side badges (status)
-    right_badges = QHBoxLayout()
-    right_badges.setSpacing(4)
     
     # Status badges
     if getattr(pr_data, 'draft', False):
         draft_badge = create_badge("DRAFT", "#6c757d")
-        right_badges.addWidget(draft_badge)
+        badges_layout.addWidget(draft_badge)
     
     # Status badge colors
     MERGED_COLOR = "#6f42c1"  # Purple
@@ -274,10 +276,9 @@ def create_pr_card(pr_data, settings, parent=None):
         status_badge = create_badge("CLOSED", CLOSED_COLOR)
     else:
         status_badge = create_badge("OPEN", OPEN_COLOR)
-    right_badges.addWidget(status_badge)
+    badges_layout.addWidget(status_badge)
     
-    badges_layout.addLayout(right_badges)
-    
+    # Add badges layout to header
     header.addLayout(badges_layout)
     layout.addLayout(header)
     
@@ -948,27 +949,23 @@ def get_changes_color(total_changes, settings):
     danger_level = settings.get('thresholds', {}).get('lines', {}).get('danger', 1000)
     
     if total_changes <= warning_level:
-        return "#28a745"  # Pure green for small changes
+        return "rgba(40, 167, 69, 0.5)"  # Green with 0.5 opacity
     elif total_changes <= danger_level:
         # Calculate position between warning and danger
         ratio = (total_changes - warning_level) / (danger_level - warning_level)
         # Create a gradient from green to yellow to red
         if ratio <= 0.5:
             # Green to yellow
-            sub_ratio = ratio * 2
             return f"qlineargradient(x1:0, y1:0, x2:1, y2:0, " \
-                   f"stop:0 #28a745, " \
-                   f"stop:0.5 #28a745, " \
-                   f"stop:1 #ffc107)"
+                   f"stop:0 rgba(40, 167, 69, 0.5), " \
+                   f"stop:1 rgba(255, 193, 7, 0.5))"
         else:
             # Yellow to red
-            sub_ratio = (ratio - 0.5) * 2
             return f"qlineargradient(x1:0, y1:0, x2:1, y2:0, " \
-                   f"stop:0 #ffc107, " \
-                   f"stop:0.5 #ffc107, " \
-                   f"stop:1 #dc3545)"
+                   f"stop:0 rgba(255, 193, 7, 0.5), " \
+                   f"stop:1 rgba(220, 53, 69, 0.5))"
     else:
-        return "#dc3545"  # Pure red for large changes
+        return "rgba(220, 53, 69, 0.5)"  # Red with 0.5 opacity
 
 def create_changes_badge(additions, deletions, settings):
     """Create a badge showing additions and deletions with color gradient"""
@@ -984,11 +981,12 @@ def create_changes_badge(additions, deletions, settings):
             max-width: 120px;
             min-height: 22px;
             max-height: 22px;
+            padding: 0px 8px;
         }}
         QLabel {{
+            background: transparent;
             color: white;
             font-size: 10px;
-            padding: 0;
         }}
     """)
     
@@ -998,17 +996,17 @@ def create_changes_badge(additions, deletions, settings):
     
     # Show additions in green text
     additions_label = QLabel(f"+{additions}")
-    additions_label.setStyleSheet("color: #98ff98; font-size: 10px; font-weight: bold;")  # Light green
+    additions_label.setStyleSheet("color: rgba(152, 255, 152, 0.9); font-size: 10px; font-weight: bold;")
     layout.addWidget(additions_label)
     
     # Separator
     separator = QLabel("/")
-    separator.setStyleSheet("color: white; font-size: 10px;")
+    separator.setStyleSheet("color: rgba(255, 255, 255, 0.7); font-size: 10px;")
     layout.addWidget(separator)
     
     # Show deletions in red text
     deletions_label = QLabel(f"-{deletions}")
-    deletions_label.setStyleSheet("color: #ffb3b3; font-size: 10px; font-weight: bold;")  # Light red
+    deletions_label.setStyleSheet("color: rgba(255, 179, 179, 0.9); font-size: 10px; font-weight: bold;")
     layout.addWidget(deletions_label)
     
     return changes_badge

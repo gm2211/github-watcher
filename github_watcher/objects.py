@@ -59,11 +59,20 @@ class TimelineEventType(Enum):
     UNKNOWN = "unknown"
 
     @classmethod
-    def from_string(cls, event_type_str: str) -> 'TimelineEventType':
+    def from_string(cls, event_type_str) -> 'TimelineEventType':
         """Safely convert string to TimelineEventType"""
+        # If we're already dealing with an enum, return it
+        if isinstance(event_type_str, TimelineEventType):
+            return event_type_str
+            
         try:
-            # Convert to lowercase for case-insensitive comparison
-            event_type_str = event_type_str.lower()
+            # Handle None case
+            if event_type_str is None:
+                return cls.UNKNOWN
+                
+            # Ensure we're working with a string
+            event_type_str = str(event_type_str).lower()
+            
             # Map GitHub API event types to our enum values
             event_map = {
                 'committed': cls.COMMITTED,
@@ -76,8 +85,8 @@ class TimelineEventType(Enum):
                 'reopened': cls.REOPENED,
             }
             return event_map.get(event_type_str, cls.UNKNOWN)
-        except (ValueError, AttributeError):
-            print(f"Warning: Unknown event type '{event_type_str}', treating as UNKNOWN")
+        except Exception as e:
+            print(f"Warning: Error converting event type '{event_type_str}': {e}, treating as UNKNOWN")
             return cls.UNKNOWN
 
     def __str__(self):
@@ -97,15 +106,20 @@ class TimelineEvent:
     def to_dict(self):
         """Convert TimelineEvent to a dictionary for serialization"""
         try:
-            # Convert enum to string value for serialization
-            event_type_str = self.eventType.value if isinstance(self.eventType, TimelineEventType) else None
+            # Always convert eventType to string value for serialization
+            if isinstance(self.eventType, TimelineEventType):
+                event_type_str = self.eventType.value
+            elif self.eventType is None:
+                event_type_str = None
+            else:
+                event_type_str = str(self.eventType)
             
             return {
                 'id': self.id,
                 'node_id': self.node_id,
                 'url': self.url,
                 'author': self.author.to_dict() if self.author else None,
-                'eventType': event_type_str,  # Store the string value
+                'eventType': event_type_str,  # Now always a string or None
                 'created_at': self.created_at.isoformat() if self.created_at else None,
                 'updated_at': self.updated_at.isoformat() if self.updated_at else None
             }
@@ -125,14 +139,11 @@ class TimelineEvent:
     def from_dict(cls, data: dict) -> 'TimelineEvent':
         """Create TimelineEvent from a dictionary"""
         try:
+            print(f"Debug: from_dict called with eventType: {data.get('eventType')} (type: {type(data.get('eventType'))})")
             # Convert string back to enum if present
             event_type = None
             if event_type_str := data.get('eventType'):
-                try:
-                    event_type = TimelineEventType.from_string(event_type_str)
-                except ValueError:
-                    print(f"Warning: Unknown event type '{event_type_str}', using UNKNOWN")
-                    event_type = TimelineEventType.UNKNOWN
+                event_type = TimelineEventType.from_string(event_type_str)
             
             # Parse author data
             author_data = data.get('author')
