@@ -986,6 +986,17 @@ class PRWatcherUI(QMainWindow):
                     if pr_num:
                         current_closed_prs.add(pr_num)
                         pr_objects[pr_num] = pr
+                        # Remove from open PRs if it was just closed
+                        if pr_num in current_open_prs:
+                            current_open_prs.remove(pr_num)
+                            if isinstance(open_prs_by_user, dict):
+                                for user_prs in open_prs_by_user.values():
+                                    user_prs[:] = [p for p in user_prs if p.number != pr_num]
+        
+        if not hasattr(self, 'initial_state'):
+            self.initial_state = True
+            self.previously_open_prs = set()
+            self.previously_closed_prs = set()
         
         if self.initial_state:
             # Initialize state without notifications
@@ -1026,30 +1037,6 @@ class PRWatcherUI(QMainWindow):
                 if closed_details:
                     notify(NOTIFIER_APP, "PRs Closed", 
                           "Recently closed PRs:\n" + "\n\n".join(closed_details))
-            
-            if new_prs:
-                new_details = []
-                for pr_num in new_prs:
-                    if pr := pr_objects.get(pr_num):
-                        repo = f"{pr.repo_owner}/{pr.repo_name}"
-                        author = pr.user.login if pr.user else "Unknown"
-                        new_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
-                
-                if new_details:
-                    notify(NOTIFIER_APP, "New PRs", 
-                          "New PRs opened:\n" + "\n\n".join(new_details))
-            
-            if reopened_prs:
-                reopen_details = []
-                for pr_num in reopened_prs:
-                    if pr := pr_objects.get(pr_num):
-                        repo = f"{pr.repo_owner}/{pr.repo_name}"
-                        author = pr.user.login if pr.user else "Unknown"
-                        reopen_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
-                
-                if reopen_details:
-                    notify(NOTIFIER_APP, "PRs Reopened", 
-                          "PRs reopened:\n" + "\n\n".join(reopen_details))
             
             # Update tracking sets after notifications
             self.previously_open_prs = current_open_prs.copy()
