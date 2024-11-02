@@ -3,16 +3,15 @@ import json
 import xxhash
 import shutil
 from datetime import datetime, timedelta
-from objects import TimelineEventType  # Import the enum
+from objects import TimelineEventType, PullRequest  # Import both classes
 
 
 class Cache:
     def __init__(self, cache_dir=".cache"):
         self.cache_dir = cache_dir
-        # Clean up cache directory on initialization
-        if os.path.exists(cache_dir):
-            shutil.rmtree(cache_dir)
-        os.makedirs(cache_dir)
+        # Create cache directory if it doesn't exist
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
     
     def _get_cache_file(self, key, bucket):
         # Use xxhash for faster hashing
@@ -92,3 +91,74 @@ class Cache:
         for file in os.listdir(self.cache_dir):
             if file.startswith(f"{bucket}_"):
                 os.remove(os.path.join(self.cache_dir, file))
+
+
+def get_cached_pr_data(github_prs, users):
+    """Try to get PR data from cache"""
+    print("\nDebug - Attempting to load from cache...")
+    
+    # Try to get data from cache
+    cache_key = f"all_pr_data_{'-'.join(sorted(users))}"
+    print(f"Debug - Cache key: {cache_key}")
+    
+    cached_data = github_prs.cache.get(cache_key, "all_pr_data")
+    if cached_data:
+        print(f"Debug - Found cached data from {cached_data.get('timestamp', 'unknown time')}")
+        print(f"Debug - Raw cached data: {cached_data}")  # Add this debug line
+        
+        try:
+            # Convert cached dictionaries back to PullRequest objects
+            open_prs = {
+                user: [PullRequest.parse_pr(pr_dict) for pr_dict in prs]
+                for user, prs in cached_data.get('open_prs', {}).items()
+            }
+            needs_review = {
+                user: [PullRequest.parse_pr(pr_dict) for pr_dict in prs]
+                for user, prs in cached_data.get('needs_review', {}).items()
+            }
+            needs_attention = {
+                user: [PullRequest.parse_pr(pr_dict) for pr_dict in prs]
+                for user, prs in cached_data.get('needs_attention', {}).items()
+            }
+            recently_closed = {
+                user: [PullRequest.parse_pr(pr_dict) for pr_dict in prs]
+                for user, prs in cached_data.get('recently_closed', {}).items()
+            }
+            
+            print(f"Debug - Cached data contains:")
+            print(f"  - Open PRs: {sum(len(prs) for prs in open_prs.values())}")
+            print(f"  - Needs Review: {sum(len(prs) for prs in needs_review.values())}")
+            print(f"  - Needs Attention: {sum(len(prs) for prs in needs_attention.values())}")
+            print(f"  - Recently Closed: {sum(len(prs) for prs in recently_closed.values())}")
+            
+            return (open_prs, needs_review, needs_attention, recently_closed)
+        except Exception as e:
+            print(f"Error parsing cached data: {e}")
+            return None
+    
+    print("Debug - No valid cache found")
+    return None
+
+
+def cache_pr_data(github_prs, users, data):
+    """Cache the complete PR data set"""
+    cache_key = f"all_pr_data_{'-'.join(sorted(users))}"
+    print(f"Debug - Caching data with key: {cache_key}")
+    
+    cache_data = {
+        'open_prs': data[0],
+        'needs_review': data[1],
+        'needs_attention': data[2],
+        'recently_closed': data[3],
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    print(f"Debug - Caching data from {cache_data['timestamp']}")
+    print(f"Debug - Data contains:")
+    print(f"  - Open PRs: {len(data[0])}")
+    print(f"  - Needs Review: {len(data[1])}")
+    print(f"  - Needs Attention: {len(data[2])}")
+    print(f"  - Recently Closed: {len(data[3])}")
+    
+    github_prs.cache.set(cache_key, cache_data, "all_pr_data")
+    print("\nDebug - Cached complete PR data set")

@@ -272,31 +272,107 @@ class PullRequest:
     deletions: Optional[int] = None
 
     def to_dict(self):
-        return asdict(self)
+        """Convert PullRequest to a dictionary for serialization"""
+        try:
+            return {
+                'id': self.id,
+                'number': self.number,
+                'title': self.title,
+                'state': self.state,
+                'created_at': self.created_at,
+                'updated_at': self.updated_at,
+                'closed_at': self.closed_at,
+                'merged_at': self.merged_at,
+                'draft': self.draft,
+                'user': self.user.to_dict() if self.user else None,
+                'html_url': self.html_url,
+                'repo_owner': self.repo_owner,
+                'repo_name': self.repo_name,
+                'timeline': [event.to_dict() for event in self.timeline] if self.timeline else None,
+                'changed_files': self.changed_files,
+                'additions': self.additions,
+                'deletions': self.deletions
+            }
+        except Exception as e:
+            print(f"Warning: Error serializing PullRequest: {e}")
+            # Return minimal valid dict
+            return {
+                'id': self.id,
+                'number': self.number,
+                'title': self.title,
+                'state': self.state,
+                'created_at': self.created_at,
+                'updated_at': self.updated_at,
+                'closed_at': None,
+                'merged_at': None,
+                'draft': self.draft,
+                'user': self.user.to_dict() if self.user else None,
+                'html_url': self.html_url,
+                'repo_owner': self.repo_owner,
+                'repo_name': self.repo_name,
+                'timeline': None,
+                'changed_files': None,
+                'additions': None,
+                'deletions': None
+            }
 
     def fetch_timeline(self, github_prs: 'GitHubPRs'):
         self.timeline = github_prs.get_pr_timeline(self.repo_owner, self.repo_name, self.number)
 
     @staticmethod
     def parse_pr(pr_data: dict) -> 'PullRequest':
-        return PullRequest(
-            id=pr_data['id'],
-            number=pr_data['number'],
-            title=pr_data['title'],
-            state=pr_data['state'],
-            created_at=pr_data['created_at'],
-            updated_at=pr_data['updated_at'],
-            closed_at=pr_data.get('closed_at'),
-            merged_at=pr_data.get('merged_at'),
-            draft=pr_data['draft'],
-            user=User.parse(pr_data['user']),
-            html_url=pr_data['html_url'],
-            repo_owner=pr_data['html_url'].split('/')[3],
-            repo_name=pr_data['html_url'].split('/')[4],
-            changed_files=pr_data.get('changed_files'),
-            additions=pr_data.get('additions'),
-            deletions=pr_data.get('deletions')
-        )
+        """Create PullRequest from a dictionary"""
+        try:
+            print(f"\nDebug - parse_pr called with data: {pr_data}")
+            
+            # Parse timeline if present
+            timeline = None
+            if timeline_data := pr_data.get('timeline'):
+                print(f"Debug - Processing timeline with {len(timeline_data)} events")
+                timeline = [TimelineEvent.from_dict(event) for event in timeline_data if event]
+
+            # Handle datetime strings or datetime objects for dates
+            def parse_date(date_val):
+                print(f"Debug - parse_date called with: {date_val} (type: {type(date_val)})")
+                if date_val is None:
+                    return None
+                if isinstance(date_val, datetime):
+                    result = date_val.isoformat()
+                    print(f"Debug - Converted datetime to ISO: {result}")
+                    return result
+                if isinstance(date_val, str):
+                    print(f"Debug - Using existing string: {date_val}")
+                    return date_val
+                result = str(date_val)
+                print(f"Debug - Converted other type to string: {result}")
+                return result
+
+            pr = PullRequest(
+                id=pr_data['id'],
+                number=pr_data['number'],
+                title=pr_data['title'],
+                state=pr_data['state'],
+                created_at=parse_date(pr_data['created_at']),
+                updated_at=parse_date(pr_data['updated_at']),
+                closed_at=parse_date(pr_data.get('closed_at')),
+                merged_at=parse_date(pr_data.get('merged_at')),
+                draft=pr_data['draft'],
+                user=User.parse(pr_data['user']),
+                html_url=pr_data['html_url'],
+                repo_owner=pr_data['repo_owner'],
+                repo_name=pr_data['repo_name'],
+                timeline=timeline,
+                changed_files=pr_data.get('changed_files'),
+                additions=pr_data.get('additions'),
+                deletions=pr_data.get('deletions')
+            )
+            print(f"Debug - Successfully created PR object: #{pr.number}")
+            return pr
+            
+        except Exception as e:
+            print(f"Warning: Error parsing PullRequest from dict: {e}")
+            print(f"Data: {pr_data}")
+            raise
 
     @staticmethod
     def parse_prs(prs_data: list) -> List['PullRequest']:

@@ -7,12 +7,14 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QFont
 import webbrowser
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import platform
 import os
 from notifications import notify, NOTIFIER_APP
 import yaml
 import time
+from github_auth import get_github_api_key
+from github_prs import GitHubPRs
 
 
 class SectionFrame(QFrame):
@@ -379,7 +381,11 @@ def create_pr_card(pr_data, settings, parent=None):
     if updated := getattr(pr_data, 'updated_at', None):
         try:
             if isinstance(updated, str):
-                updated_date = datetime.strptime(updated, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                # Handle both ISO 8601 formats with timezone offset and Z
+                if updated.endswith('Z'):
+                    updated_date = datetime.strptime(updated, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                else:
+                    updated_date = datetime.fromisoformat(updated)
             else:
                 updated_date = updated
             
@@ -391,7 +397,7 @@ def create_pr_card(pr_data, settings, parent=None):
             updated_label.setStyleSheet("color: #8b949e; font-size: 11px;")
             right_info.addWidget(updated_label)
         except (ValueError, TypeError) as e:
-            print(f"Error parsing update date: {e}")
+            print(f"Error parsing update date: {e} (value: {updated})")
     
     info_layout.addLayout(right_info)
     layout.addWidget(info_container)
@@ -652,6 +658,76 @@ def save_settings(settings):
         print(f"Error saving settings: {e}")
 
 
+class LoadingOverlay(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setVisible(False)  # Start hidden
+        
+        # Initialize timer first
+        self.timer = None
+        self.rotation = 0
+        
+        # Semi-transparent dark background
+        self.setStyleSheet("""
+            QWidget {
+                background-color: rgba(0, 0, 0, 0.5);
+                border-radius: 10px;
+            }
+            QLabel {
+                color: white;
+                font-size: 12px;
+                background: transparent;
+            }
+        """)
+        
+        # Layout
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Loading text
+        loading_label = QLabel("Refreshing...")
+        loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(loading_label)
+        
+        # Spinner emoji that rotates
+        self.spinner_label = QLabel("⟳")
+        self.spinner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spinner_label.setStyleSheet("""
+            QLabel {
+                color: white;
+                font-size: 24px;
+                background: transparent;
+            }
+        """)
+        layout.addWidget(self.spinner_label)
+    
+    def rotate_spinner(self):
+        if hasattr(self, 'rotation'):  # Safety check
+            self.rotation = (self.rotation + 30) % 360
+            self.spinner_label.setStyleSheet(f"""
+                QLabel {{
+                    color: white;
+                    font-size: 24px;
+                    background: transparent;
+                    qproperty-alignment: AlignCenter;
+                    transform: rotate({self.rotation}deg);
+                }}
+            """)
+    
+    def showEvent(self, event):
+        if not self.timer:
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self.rotate_spinner)
+            self.timer.setInterval(100)  # Rotate every 100ms
+        self.timer.start()
+        super().showEvent(event)
+    
+    def hideEvent(self, event):
+        if hasattr(self, 'timer') and self.timer:  # Double safety check
+            self.timer.stop()
+        super().hideEvent(event)
+
+
 class PRWatcherUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -807,6 +883,10 @@ class PRWatcherUI(QMainWindow):
                 color: #ffffff;
             }
         """)
+        
+        # Create loading overlay
+        self.loading_overlay = LoadingOverlay(central_widget)
+        self.loading_overlay.hide()
     
     def show_test_notification(self):
         notify(NOTIFIER_APP, "GitHub PR Watcher", "Test notification - System is working!")
@@ -814,9 +894,31 @@ class PRWatcherUI(QMainWindow):
     def refresh_data(self):
         if hasattr(self, 'refresh_callback'):
             print("\nDebug - Starting refresh...")
-            self.refresh_callback()
-            print("Debug - Refresh completed")
-
+            self.loading_overlay.show()  # Show loading overlay
+            
+            # Force refresh by getting fresh data
+            try:
+                print("\nDebug - Fetching fresh PR data...")
+                new_data = self.github_prs.get_pr_data(self.settings.get('users', []), force_refresh=True)
+                
+                if new_data is not None:  # Only update if we got valid data
+                    print("Debug - Updating UI with fresh data")
+                    self.update_pr_lists(*new_data)
+                    # Reset failure count on success
+                    self.consecutive_failures = 0
+                else:
+                    print("Debug - Refresh failed, keeping existing data")
+                
+            except Exception as e:
+                # Increment failure count
+                self.consecutive_failures += 1
+                print(f"Error refreshing data: {str(e)}")
+                print(f"Consecutive failures: {self.consecutive_failures}")
+            finally:
+                # Always hide loading overlay when done
+                self.loading_overlay.hide()
+                print("Debug - Refresh completed")
+    
     def set_refresh_callback(self, callback):
         self.refresh_callback = callback
 
@@ -1020,6 +1122,12 @@ class PRWatcherUI(QMainWindow):
         except Exception as e:
             print(f"Error setting up refresh timer: {e}")
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Keep loading overlay centered
+        if hasattr(self, 'loading_overlay'):
+            self.loading_overlay.setGeometry(self.centralWidget().rect())
+
 
 def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
             prs_that_need_attention_by_user, user_recently_closed_prs_by_user):
@@ -1032,6 +1140,17 @@ def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
     window.consecutive_failures = 0  # Track failures for backoff
     window.max_backoff = 5  # Maximum backoff in seconds
     
+    # Create GitHubPRs instance
+    github_token = get_github_api_key()
+    cache_duration = settings.get('cache_duration', 1)
+    github_prs = GitHubPRs(
+        github_token,
+        recency_threshold=timedelta(days=1),
+        cache_dir=".cache",
+        cache_ttl=timedelta(hours=cache_duration)
+    )
+    window.github_prs = github_prs  # Store instance in window
+    
     # Update initial data
     window.update_pr_lists(
         open_prs_by_user,
@@ -1042,27 +1161,27 @@ def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
     
     # Set up refresh callback
     def refresh_callback():
-        from utils import get_pr_data
-        
         try:
             if window.consecutive_failures > 0:
-                # Calculate backoff time (exponential with max limit)
                 backoff = min(2 ** (window.consecutive_failures - 1), window.max_backoff)
                 print(f"\nDebug - Backing off for {backoff} seconds due to previous failures")
                 time.sleep(backoff)
             
             print("\nDebug - Fetching fresh PR data...")
-            new_data = get_pr_data(window.settings.get('users', []))
-            window.update_pr_lists(*new_data)
-            
-            # Reset failure count on success
-            window.consecutive_failures = 0
+            new_data = window.github_prs.get_pr_data(window.settings.get('users', []), force_refresh=True)
+            if new_data is not None:
+                window.update_pr_lists(*new_data)
+                window.consecutive_failures = 0
+            else:
+                print("Debug - Refresh failed, keeping existing data")
+                window.consecutive_failures += 1
             
         except Exception as e:
-            # Increment failure count
             window.consecutive_failures += 1
             print(f"Error refreshing data: {str(e)}")
             print(f"Consecutive failures: {window.consecutive_failures}")
+        finally:
+            window.loading_overlay.hide()
     
     window.set_refresh_callback(refresh_callback)
     window.show()
