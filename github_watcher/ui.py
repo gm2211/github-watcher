@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QScrollArea, QSizePolicy, QDialog,
-    QLineEdit, QSpinBox, QFormLayout, QTextEdit, QGroupBox, QComboBox
+    QLineEdit, QSpinBox, QFormLayout, QTextEdit, QGroupBox, QComboBox,
+    QTabWidget, QDialogButtonBox, QPlainTextEdit, QMessageBox
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QFont
@@ -415,124 +416,193 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setModal(True)
-        self.setMinimumWidth(400)
-        
-        layout = QVBoxLayout(self)
-        
-        form = QFormLayout()
-        
-        # Users list
-        self.users_edit = QTextEdit()
-        self.users_edit.setPlaceholderText("Enter GitHub usernames (one per line)")
-        form.addRow("Users to watch:", self.users_edit)
-        
-        # Refresh interval
-        refresh_container = QHBoxLayout()
-        self.refresh_interval = QSpinBox()
-        self.refresh_interval.setRange(5, 3600)
-        self.refresh_unit = QComboBox()
-        self.refresh_unit.addItems(["seconds", "minutes"])
-        refresh_container.addWidget(self.refresh_interval)
-        refresh_container.addWidget(self.refresh_unit)
-        form.addRow("Refresh interval:", refresh_container)
-        
-        # Cache duration
-        cache_container = QHBoxLayout()
-        self.cache_duration = QSpinBox()
-        self.cache_duration.setRange(1, 24)
-        self.cache_unit = QComboBox()
-        self.cache_unit.addItems(["minutes", "hours", "days"])
-        cache_container.addWidget(self.cache_duration)
-        cache_container.addWidget(self.cache_unit)
-        form.addRow("Cache duration:", cache_container)
-        
-        # PR Changes thresholds
-        changes_group = QGroupBox("PR Changes Thresholds")
-        changes_layout = QFormLayout()
-        
-        # Files count thresholds
-        self.files_warning = QSpinBox()
-        self.files_warning.setRange(1, 1000)
-        self.files_danger = QSpinBox()
-        self.files_danger.setRange(1, 1000)
-        changes_layout.addRow("Files Warning Level:", self.files_warning)
-        changes_layout.addRow("Files Danger Level:", self.files_danger)
-        
-        # Lines changed thresholds
-        self.lines_warning = QSpinBox()
-        self.lines_warning.setRange(1, 10000)
-        self.lines_danger = QSpinBox()
-        self.lines_danger.setRange(1, 10000)
-        changes_layout.addRow("Lines Warning Level:", self.lines_warning)
-        changes_layout.addRow("Lines Danger Level:", self.lines_danger)
-        
-        changes_group.setLayout(changes_layout)
-        layout.addWidget(changes_group)
-        
-        layout.addLayout(form)
-        
-        # Buttons
-        buttons = QHBoxLayout()
-        save_btn = QPushButton("Save")
-        save_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        
-        buttons.addStretch()
-        buttons.addWidget(save_btn)
-        buttons.addWidget(cancel_btn)
-        layout.addLayout(buttons)
-        
-        # Load current settings
+        self.setup_ui()
         self.load_settings()
-    
-    def load_settings(self):
-        settings = load_settings()
-        self.users_edit.setPlainText("\n".join(settings.get('users', [])))
-        
-        # Load refresh interval
-        refresh = settings.get('refresh', {'value': 10, 'unit': 'seconds'})
-        self.refresh_interval.setValue(refresh['value'])
-        self.refresh_unit.setCurrentText(refresh['unit'])
-        
-        # Load cache duration
-        cache = settings.get('cache', {'value': 1, 'unit': 'hours'})
-        self.cache_duration.setValue(cache['value'])
-        self.cache_unit.setCurrentText(cache['unit'])
-        
-        # Load thresholds
-        thresholds = settings.get('thresholds', {
-            'files': {'warning': 10, 'danger': 50},
-            'lines': {'warning': 500, 'danger': 1000}
-        })
-        self.files_warning.setValue(thresholds['files']['warning'])
-        self.files_danger.setValue(thresholds['files']['danger'])
-        self.lines_warning.setValue(thresholds['lines']['warning'])
-        self.lines_danger.setValue(thresholds['lines']['danger'])
-    
+
     def get_settings(self):
+        """Get current settings values"""
         return {
-            'users': [u.strip() for u in self.users_edit.toPlainText().split('\n') if u.strip()],
-            'refresh': {
-                'value': self.refresh_interval.value(),
-                'unit': self.refresh_unit.currentText()
-            },
-            'cache': {
-                'value': self.cache_duration.value(),
-                'unit': self.cache_unit.currentText()
-            },
             'thresholds': {
+                'additions': {
+                    'warning': self.additions_warning.value(),
+                    'danger': self.additions_danger.value()
+                },
+                'deletions': {
+                    'warning': self.deletions_warning.value(),
+                    'danger': self.deletions_danger.value()
+                },
                 'files': {
                     'warning': self.files_warning.value(),
                     'danger': self.files_danger.value()
-                },
-                'lines': {
-                    'warning': self.lines_warning.value(),
-                    'danger': self.lines_danger.value()
                 }
-            }
+            },
+            'cache': {
+                'value': self.cache_value.value(),
+                'unit': self.cache_unit.currentText()
+            },
+            'refresh': {
+                'value': self.refresh_value.value(),
+                'unit': self.refresh_unit.currentText()
+            },
+            'users': [u.strip() for u in self.users_text.toPlainText().split('\n') if u.strip()]
         }
+
+    def accept(self):
+        """Handle dialog acceptance"""
+        try:
+            self.save_settings()
+            super().accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save settings: {str(e)}")
+
+    def load_settings(self):
+        """Load settings from file"""
+        settings = load_settings()
+        
+        # Load thresholds
+        thresholds = settings.get('thresholds', {})
+        
+        # Additions thresholds
+        additions = thresholds.get('additions', {})
+        self.additions_warning.setValue(additions.get('warning', 300))
+        self.additions_danger.setValue(additions.get('danger', 1000))
+        
+        # Deletions thresholds
+        deletions = thresholds.get('deletions', {})
+        self.deletions_warning.setValue(deletions.get('warning', 1000))
+        self.deletions_danger.setValue(deletions.get('danger', 10000))
+        
+        # Files thresholds
+        files = thresholds.get('files', {})
+        self.files_warning.setValue(files.get('warning', 10))
+        self.files_danger.setValue(files.get('danger', 50))
+        
+        # Load cache settings
+        cache = settings.get('cache', {})
+        self.cache_value.setValue(cache.get('value', 1))
+        self.cache_unit.setCurrentText(cache.get('unit', 'hours'))
+        
+        # Load refresh settings
+        refresh = settings.get('refresh', {})
+        self.refresh_value.setValue(refresh.get('value', 30))
+        self.refresh_unit.setCurrentText(refresh.get('unit', 'minutes'))
+        
+        # Load users
+        users = settings.get('users', [])
+        self.users_text.setPlainText('\n'.join(users))
+
+    def save_settings(self):
+        """Save settings to file"""
+        settings = {
+            'thresholds': {
+                'additions': {
+                    'warning': self.additions_warning.value(),
+                    'danger': self.additions_danger.value()
+                },
+                'deletions': {
+                    'warning': self.deletions_warning.value(),
+                    'danger': self.deletions_danger.value()
+                },
+                'files': {
+                    'warning': self.files_warning.value(),
+                    'danger': self.files_danger.value()
+                }
+            },
+            'cache': {
+                'value': self.cache_value.value(),
+                'unit': self.cache_unit.currentText()
+            },
+            'refresh': {
+                'value': self.refresh_value.value(),
+                'unit': self.refresh_unit.currentText()
+            },
+            'users': [u.strip() for u in self.users_text.toPlainText().split('\n') if u.strip()]
+        }
+        
+        save_settings(settings)
+
+    def setup_ui(self):
+        """Setup the settings dialog UI"""
+        layout = QVBoxLayout(self)
+        
+        # Create tabs
+        tabs = QTabWidget()
+        layout.addWidget(tabs)
+        
+        # Thresholds tab
+        thresholds_tab = QWidget()
+        thresholds_layout = QFormLayout(thresholds_tab)
+        
+        # Additions thresholds
+        self.additions_warning = QSpinBox()
+        self.additions_warning.setMaximum(10000)
+        self.additions_danger = QSpinBox()
+        self.additions_danger.setMaximum(10000)
+        thresholds_layout.addRow("Additions Warning:", self.additions_warning)
+        thresholds_layout.addRow("Additions Danger:", self.additions_danger)
+        
+        # Deletions thresholds
+        self.deletions_warning = QSpinBox()
+        self.deletions_warning.setMaximum(100000)
+        self.deletions_danger = QSpinBox()
+        self.deletions_danger.setMaximum(100000)
+        thresholds_layout.addRow("Deletions Warning:", self.deletions_warning)
+        thresholds_layout.addRow("Deletions Danger:", self.deletions_danger)
+        
+        # Files thresholds
+        self.files_warning = QSpinBox()
+        self.files_warning.setMaximum(1000)
+        self.files_danger = QSpinBox()
+        self.files_danger.setMaximum(1000)
+        thresholds_layout.addRow("Files Warning:", self.files_warning)
+        thresholds_layout.addRow("Files Danger:", self.files_danger)
+        
+        tabs.addTab(thresholds_tab, "Thresholds")
+        
+        # Cache and Refresh tab
+        timing_tab = QWidget()
+        timing_layout = QFormLayout(timing_tab)
+        
+        # Cache settings
+        cache_widget = QWidget()
+        cache_layout = QHBoxLayout(cache_widget)
+        self.cache_value = QSpinBox()
+        self.cache_value.setMaximum(24)
+        self.cache_unit = QComboBox()
+        self.cache_unit.addItems(['seconds', 'minutes', 'hours'])
+        cache_layout.addWidget(self.cache_value)
+        cache_layout.addWidget(self.cache_unit)
+        timing_layout.addRow("Cache Duration:", cache_widget)
+        
+        # Refresh settings
+        refresh_widget = QWidget()
+        refresh_layout = QHBoxLayout(refresh_widget)
+        self.refresh_value = QSpinBox()
+        self.refresh_value.setMaximum(60)
+        self.refresh_unit = QComboBox()
+        self.refresh_unit.addItems(['seconds', 'minutes', 'hours'])
+        refresh_layout.addWidget(self.refresh_value)
+        refresh_layout.addWidget(self.refresh_unit)
+        timing_layout.addRow("Refresh Interval:", refresh_widget)
+        
+        tabs.addTab(timing_tab, "Timing")
+        
+        # Users tab
+        users_tab = QWidget()
+        users_layout = QVBoxLayout(users_tab)
+        self.users_text = QPlainTextEdit()
+        users_layout.addWidget(QLabel("Users (one per line):"))
+        users_layout.addWidget(self.users_text)
+        tabs.addTab(users_tab, "Users")
+        
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | 
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
 
 
 def load_settings():
@@ -903,25 +973,52 @@ class PRWatcherUI(QMainWindow):
                 frame.layout().addWidget(card)
 
     def show_settings(self):
-        dialog = SettingsDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.settings = dialog.get_settings()
-            save_settings(self.settings)
+        """Show settings dialog"""
+        try:
+            dialog = SettingsDialog(self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                settings = dialog.get_settings()
+                # Update refresh timer if refresh settings changed
+                current_settings = load_settings()
+                if (settings['refresh'] != current_settings.get('refresh')):
+                    self.setup_refresh_timer(settings['refresh'])
+                # Trigger refresh if users changed
+                if settings['users'] != current_settings.get('users', []):
+                    self.refresh_data()
+        except Exception as e:
+            print(f"Error showing settings: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to show settings: {str(e)}")
+
+    def setup_refresh_timer(self, refresh_settings=None):
+        """Setup the refresh timer"""
+        try:
+            if not refresh_settings:
+                settings = load_settings()
+                refresh_settings = settings.get('refresh', {'value': 30, 'unit': 'minutes'})
             
-            # Convert refresh interval to milliseconds based on unit
-            refresh_value = self.settings['refresh']['value']
-            refresh_unit = self.settings['refresh']['unit']
+            value = refresh_settings['value']
+            unit = refresh_settings['unit']
             
-            if refresh_unit == 'minutes':
-                refresh_ms = refresh_value * 60 * 1000
-            else:  # seconds
-                refresh_ms = refresh_value * 1000
+            # Convert to milliseconds
+            if unit == 'seconds':
+                interval = value * 1000
+            elif unit == 'minutes':
+                interval = value * 60 * 1000
+            else:  # hours
+                interval = value * 60 * 60 * 1000
+                
+            print(f"Debug - Setting up refresh timer with interval: {interval}ms")
             
-            # Update refresh timer
-            self.auto_refresh_timer.setInterval(refresh_ms)
+            if hasattr(self, 'refresh_timer'):
+                self.refresh_timer.stop()
             
-            # Trigger immediate refresh
-            self.refresh_data()
+            self.refresh_timer = QTimer(self)
+            self.refresh_timer.timeout.connect(self.refresh_data)
+            self.refresh_timer.start(interval)
+            print("Debug - Refresh timer started")
+            
+        except Exception as e:
+            print(f"Error setting up refresh timer: {e}")
 
 
 def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
