@@ -29,7 +29,7 @@ class SectionFrame(QFrame):
         
         # Header container
         header_container = QFrame()
-        header_container.setFixedHeight(30)  # Fixed height for header
+        header_container.setFixedHeight(30)
         header_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         header_container.setStyleSheet("background: transparent;")
         header_layout = QHBoxLayout(header_container)
@@ -70,8 +70,40 @@ class SectionFrame(QFrame):
         header_layout.addWidget(left_header)
         self.main_layout.addWidget(header_container)
         
-        # Content container
-        self.content_container = QFrame()
+        # Scroll Area
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background: transparent;
+            }
+            QScrollArea > QWidget > QWidget {
+                background: transparent;
+            }
+            QScrollBar:vertical {
+                background: #2d2d2d;
+                width: 14px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #404040;
+                min-height: 20px;
+                border-radius: 7px;
+            }
+            QScrollBar::add-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+        """)
+        
+        # Content container inside scroll area
+        self.content_container = QWidget()
         self.content_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.content_container.setStyleSheet("background: transparent;")
         self.content_layout = QVBoxLayout(self.content_container)
@@ -79,7 +111,8 @@ class SectionFrame(QFrame):
         self.content_layout.setSpacing(5)
         self.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         
-        self.main_layout.addWidget(self.content_container)
+        self.scroll_area.setWidget(self.content_container)
+        self.main_layout.addWidget(self.scroll_area)
         
         # Make header clickable
         header_container.mousePressEvent = self.toggle_content
@@ -87,11 +120,11 @@ class SectionFrame(QFrame):
         
         # Start collapsed
         self.is_expanded = True
-        self.toggle_content()  # This will collapse it initially
+        self.toggle_content()
     
     def toggle_content(self, event=None):
         self.is_expanded = not self.is_expanded
-        self.content_container.setVisible(self.is_expanded)
+        self.scroll_area.setVisible(self.is_expanded)
         self.toggle_button.setText("▼" if self.is_expanded else "▶")
         
         # Update minimum height based on state
@@ -109,17 +142,22 @@ class SectionFrame(QFrame):
         return self.content_layout
 
 
-def create_badge(text, bg_color, fg_color="white", parent=None):
+def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45):
     badge = QFrame(parent)
     badge.setStyleSheet(f"""
         QFrame {{
             background-color: {bg_color};
             border-radius: 12px;
             padding: 2px 6px;
-            min-width: 45px;
-            max-width: 45px;
+            min-width: {min_width}px;
+            max-width: {min_width + 20}px;
             min-height: 22px;
             max-height: 22px;
+        }}
+        QLabel {{
+            color: {fg_color};
+            font-size: 10px;
+            padding: 0;
         }}
     """)
     
@@ -128,11 +166,6 @@ def create_badge(text, bg_color, fg_color="white", parent=None):
     layout.setSpacing(0)
     
     label = QLabel(text)
-    label.setStyleSheet(f"""
-        color: {fg_color};
-        font-size: 10px;
-        padding: 0;
-    """)
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     layout.addWidget(label)
     
@@ -180,17 +213,54 @@ def create_pr_card(pr_data, parent=None):
     badges_layout = QHBoxLayout()
     badges_layout.setSpacing(4)
     
+    # Left side badges (files and changes)
+    left_badges = QHBoxLayout()
+    left_badges.setSpacing(4)
+    
+    # PR stats badges
+    files_count = getattr(pr_data, 'changed_files', 0)
+    if files_count > 0:
+        files_color = "#28a745" if files_count < 10 else "#f0ad4e" if files_count < 50 else "#dc3545"
+        files_badge = create_badge(f"{files_count} files", files_color, min_width=60)
+        left_badges.addWidget(files_badge)
+    
+    additions = getattr(pr_data, 'additions', 0)
+    deletions = getattr(pr_data, 'deletions', 0)
+    if additions > 0 or deletions > 0:
+        changes_badge = create_badge(
+            f"+{additions} -{deletions}", 
+            "#2d2d2d",  # Dark background
+            "#28a745" if additions < deletions else "#dc3545",  # Green if more deletions, red if more additions
+            min_width=80  # Wider badge for changes
+        )
+        left_badges.addWidget(changes_badge)
+    
+    badges_layout.addLayout(left_badges)
+    badges_layout.addStretch()  # Push status badges to the right
+    
+    # Right side badges (status)
+    right_badges = QHBoxLayout()
+    right_badges.setSpacing(4)
+    
+    # Status badges
     if getattr(pr_data, 'draft', False):
         draft_badge = create_badge("DRAFT", "#6c757d")
-        badges_layout.addWidget(draft_badge)
+        right_badges.addWidget(draft_badge)
+    
+    # Status badge colors
+    MERGED_COLOR = "#6f42c1"  # Purple
+    CLOSED_COLOR = "#dc3545"  # Red
+    OPEN_COLOR = "#28a745"    # Green
     
     if getattr(pr_data, 'merged_at', None):
-        status_badge = create_badge("MERGED", "#6f42c1")
+        status_badge = create_badge("MERGED", MERGED_COLOR)
     elif getattr(pr_data, 'state', '') == 'closed':
-        status_badge = create_badge("CLOSED", "#dc3545")
+        status_badge = create_badge("CLOSED", CLOSED_COLOR)
     else:
-        status_badge = create_badge("OPEN", "#28a745")
-    badges_layout.addWidget(status_badge)
+        status_badge = create_badge("OPEN", OPEN_COLOR)
+    right_badges.addWidget(status_badge)
+    
+    badges_layout.addLayout(right_badges)
     
     header.addLayout(badges_layout)
     layout.addLayout(header)
@@ -327,6 +397,8 @@ class PRWatcherUI(QMainWindow):
         # Test notification button
         test_notif_btn = QPushButton("🔔 Test")
         test_notif_btn.clicked.connect(self.show_test_notification)
+        test_notif_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        test_notif_btn.setFixedWidth(80)  # Fixed width
         test_notif_btn.setStyleSheet("""
             QPushButton {
                 background-color: #404040;
@@ -334,6 +406,8 @@ class PRWatcherUI(QMainWindow):
                 border-radius: 5px;
                 padding: 5px 10px;
                 color: white;
+                font-size: 12px;  /* Smaller font */
+                height: 25px;     /* Fixed height */
             }
             QPushButton:hover {
                 background-color: #505050;
@@ -344,6 +418,8 @@ class PRWatcherUI(QMainWindow):
         # Refresh button
         refresh_btn = QPushButton("↻ Refresh")
         refresh_btn.clicked.connect(self.refresh_data)
+        refresh_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        refresh_btn.setFixedWidth(80)  # Fixed width
         refresh_btn.setStyleSheet("""
             QPushButton {
                 background-color: #0d6efd;
@@ -351,6 +427,8 @@ class PRWatcherUI(QMainWindow):
                 border-radius: 5px;
                 padding: 5px 10px;
                 color: white;
+                font-size: 12px;  /* Smaller font */
+                height: 25px;     /* Fixed height */
             }
             QPushButton:hover {
                 background-color: #0b5ed7;
@@ -397,6 +475,7 @@ class PRWatcherUI(QMainWindow):
         self.previously_open_prs = set()
         self.previously_closed_prs = set()
         self.notified_prs = set()
+        self.initial_state = True  # Add flag for initial state
         
         # Set window size and style
         self.setMinimumSize(800, 600)
@@ -423,21 +502,12 @@ class PRWatcherUI(QMainWindow):
 
     def update_pr_lists(self, open_prs_by_user, prs_awaiting_review_by_user,
                        prs_that_need_attention_by_user, user_recently_closed_prs_by_user):
-        # First time initialization of tracking sets
-        if not self.previously_closed_prs and isinstance(user_recently_closed_prs_by_user, dict):
-            # Initialize with existing closed PRs to prevent "new PR" notifications for reopened PRs
-            for prs in user_recently_closed_prs_by_user.values():
-                for pr in prs:
-                    pr_num = getattr(pr, 'number', None)
-                    if pr_num:
-                        self.previously_closed_prs.add(pr_num)
-        
-        # Get current open PRs
+        # Get current state
         current_open_prs = set()
         current_closed_prs = set()
-        
-        # Process open PRs and store PR objects for later reference
         pr_objects = {}  # Store PR objects by number for easy lookup
+        
+        # Process open PRs
         if isinstance(open_prs_by_user, dict):
             for prs in open_prs_by_user.values():
                 for pr in prs:
@@ -453,78 +523,71 @@ class PRWatcherUI(QMainWindow):
                     pr_num = getattr(pr, 'number', None)
                     if pr_num:
                         current_closed_prs.add(pr_num)
-                        pr_objects[pr_num] = pr  # Also store closed PRs
+                        pr_objects[pr_num] = pr
         
-        # Find PRs that were open but are no longer open
-        disappeared_from_open = self.previously_open_prs - current_open_prs
-        
-        # Find newly closed PRs (was in open, now in closed)
-        newly_closed = disappeared_from_open & current_closed_prs
-        
-        # Find new PRs (in open, wasn't before, and wasn't closed)
-        new_prs = current_open_prs - self.previously_open_prs - self.previously_closed_prs
-        
-        # Find reopened PRs (was in closed, now in open)
-        reopened_prs = current_open_prs & self.previously_closed_prs
-        
-        print("\nDebug - PR State Changes:")
-        print(f"Previously Open: {self.previously_open_prs}")
-        print(f"Previously Closed: {self.previously_closed_prs}")
-        print(f"Current Open: {current_open_prs}")
-        print(f"Current Closed: {current_closed_prs}")
-        print(f"Disappeared from Open: {disappeared_from_open}")
-        print(f"Newly Closed: {newly_closed}")
-        print(f"New PRs: {new_prs}")
-        print(f"Reopened PRs: {reopened_prs}")
-        print(f"Notified PRs: {self.notified_prs}")
-        
-        # Reset notifications for state changes
-        self.notified_prs -= reopened_prs  # Reset for reopened PRs
-        self.notified_prs -= disappeared_from_open  # Reset for closed PRs
-        
-        # Send notifications for changes
-        if newly_closed:  # Removed the notified_prs check for closed PRs
-            closed_details = []
-            for pr_num in newly_closed:
-                if pr := pr_objects.get(pr_num):
-                    repo = f"{pr.repo_owner}/{pr.repo_name}"
-                    author = pr.user.login if pr.user else "Unknown"
-                    closed_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
+        if self.initial_state:
+            # Initialize state without notifications
+            self.previously_open_prs = current_open_prs.copy()
+            self.previously_closed_prs = current_closed_prs.copy()
+            self.initial_state = False
+            print("\nDebug - Initialized PR state without notifications")
+        else:
+            # Find state changes
+            disappeared_from_open = self.previously_open_prs - current_open_prs
+            newly_closed = disappeared_from_open & current_closed_prs
+            new_prs = current_open_prs - self.previously_open_prs - self.previously_closed_prs
+            reopened_prs = current_open_prs & self.previously_closed_prs
             
-            if closed_details:
-                notify(NOTIFIER_APP, "PRs Closed", 
-                      "Recently closed PRs:\n" + "\n\n".join(closed_details))
-                self.notified_prs.update(newly_closed)
-        
-        if new_prs - self.notified_prs:
-            new_details = []
-            for pr_num in new_prs - self.notified_prs:
-                if pr := pr_objects.get(pr_num):
-                    repo = f"{pr.repo_owner}/{pr.repo_name}"
-                    author = pr.user.login if pr.user else "Unknown"
-                    new_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
+            print("\nDebug - PR State Changes:")
+            print(f"Previously Open: {self.previously_open_prs}")
+            print(f"Previously Closed: {self.previously_closed_prs}")
+            print(f"Current Open: {current_open_prs}")
+            print(f"Current Closed: {current_closed_prs}")
+            print(f"Disappeared from Open: {disappeared_from_open}")
+            print(f"Newly Closed: {newly_closed}")
+            print(f"New PRs: {new_prs}")
+            print(f"Reopened PRs: {reopened_prs}")
             
-            if new_details:
-                notify(NOTIFIER_APP, "New PRs", 
-                      "New PRs opened:\n" + "\n\n".join(new_details))
-                self.notified_prs.update(new_prs)
-        
-        if reopened_prs:
-            reopen_details = []
-            for pr_num in reopened_prs:
-                if pr := pr_objects.get(pr_num):
-                    repo = f"{pr.repo_owner}/{pr.repo_name}"
-                    author = pr.user.login if pr.user else "Unknown"
-                    reopen_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
+            # Send notifications for changes
+            if newly_closed:
+                closed_details = []
+                for pr_num in newly_closed:
+                    if pr := pr_objects.get(pr_num):
+                        repo = f"{pr.repo_owner}/{pr.repo_name}"
+                        author = pr.user.login if pr.user else "Unknown"
+                        closed_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
+                
+                if closed_details:
+                    notify(NOTIFIER_APP, "PRs Closed", 
+                          "Recently closed PRs:\n" + "\n\n".join(closed_details))
             
-            if reopen_details:
-                notify(NOTIFIER_APP, "PRs Reopened", 
-                      "PRs reopened:\n" + "\n\n".join(reopen_details))
-                self.notified_prs.update(reopened_prs)
-        
-        # Update tracking sets after notifications
-        self.previously_open_prs = current_open_prs.copy()
-        self.previously_closed_prs = current_closed_prs.copy()
+            if new_prs:
+                new_details = []
+                for pr_num in new_prs:
+                    if pr := pr_objects.get(pr_num):
+                        repo = f"{pr.repo_owner}/{pr.repo_name}"
+                        author = pr.user.login if pr.user else "Unknown"
+                        new_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
+                
+                if new_details:
+                    notify(NOTIFIER_APP, "New PRs", 
+                          "New PRs opened:\n" + "\n\n".join(new_details))
+            
+            if reopened_prs:
+                reopen_details = []
+                for pr_num in reopened_prs:
+                    if pr := pr_objects.get(pr_num):
+                        repo = f"{pr.repo_owner}/{pr.repo_name}"
+                        author = pr.user.login if pr.user else "Unknown"
+                        reopen_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
+                
+                if reopen_details:
+                    notify(NOTIFIER_APP, "PRs Reopened", 
+                          "PRs reopened:\n" + "\n\n".join(reopen_details))
+            
+            # Update tracking sets after notifications
+            self.previously_open_prs = current_open_prs.copy()
+            self.previously_closed_prs = current_closed_prs.copy()
         
         # Update UI
         self._update_section(self.needs_review_frame, prs_awaiting_review_by_user)
