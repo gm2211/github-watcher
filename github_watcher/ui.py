@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QSpinBox, QFormLayout, QTextEdit, QGroupBox, QComboBox,
     QTabWidget, QDialogButtonBox, QPlainTextEdit, QMessageBox
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon, QFont
 import webbrowser
 from datetime import datetime, timezone, timedelta
@@ -729,6 +729,27 @@ class LoadingOverlay(QWidget):
         super().hideEvent(event)
 
 
+class RefreshWorker(QThread):
+    finished = pyqtSignal(tuple)  # Signal to emit when refresh is complete
+    error = pyqtSignal(str)       # Signal to emit when an error occurs
+    
+    def __init__(self, github_prs, users):
+        super().__init__()
+        self.github_prs = github_prs
+        self.users = users
+        
+    def run(self):
+        try:
+            print("\nDebug - Worker: Fetching fresh PR data...")
+            new_data = self.github_prs.get_pr_data(self.users, force_refresh=True)
+            if new_data is not None:
+                self.finished.emit(new_data)
+            else:
+                self.error.emit("Refresh failed, no data returned")
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class PRWatcherUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -888,38 +909,56 @@ class PRWatcherUI(QMainWindow):
         # Create loading overlay
         self.loading_overlay = LoadingOverlay(central_widget)
         self.loading_overlay.hide()
+        
+        # Initialize worker to None
+        self.refresh_worker = None
+        self.consecutive_failures = 0
+        self.max_backoff = 5
     
     def show_test_notification(self):
         notify(NOTIFIER_APP, "GitHub PR Watcher", "Test notification - System is working!")
 
     def refresh_data(self):
-        if hasattr(self, 'refresh_callback'):
-            print("\nDebug - Starting refresh...")
-            self.loading_overlay.show()  # Show loading overlay
+        if self.refresh_worker and self.refresh_worker.isRunning():
+            print("Debug - Refresh already in progress, skipping")
+            return
             
-            # Force refresh by getting fresh data
-            try:
-                print("\nDebug - Fetching fresh PR data...")
-                new_data = self.github_prs.get_pr_data(self.settings.get('users', []), force_refresh=True)
-                
-                if new_data is not None:  # Only update if we got valid data
-                    print("Debug - Updating UI with fresh data")
-                    self.update_pr_lists(*new_data)
-                    # Reset failure count on success
-                    self.consecutive_failures = 0
-                else:
-                    print("Debug - Refresh failed, keeping existing data")
-                
-            except Exception as e:
-                # Increment failure count
-                self.consecutive_failures += 1
-                print(f"Error refreshing data: {str(e)}")
-                print(f"Consecutive failures: {self.consecutive_failures}")
-            finally:
-                # Always hide loading overlay when done
-                self.loading_overlay.hide()
-                print("Debug - Refresh completed")
-    
+        print("\nDebug - Starting refresh...")
+        self.loading_overlay.show()
+        
+        # Create and start worker thread
+        self.refresh_worker = RefreshWorker(self.github_prs, self.settings.get('users', []))
+        self.refresh_worker.finished.connect(self.handle_refresh_success)
+        self.refresh_worker.error.connect(self.handle_refresh_error)
+        self.refresh_worker.finished.connect(self.cleanup_worker)
+        self.refresh_worker.error.connect(self.cleanup_worker)
+        self.refresh_worker.start()
+
+    def handle_refresh_success(self, new_data):
+        print("Debug - Refresh completed successfully")
+        self.update_pr_lists(*new_data)
+        self.consecutive_failures = 0
+        self.loading_overlay.hide()
+
+    def handle_refresh_error(self, error_msg):
+        print(f"Error refreshing data: {error_msg}")
+        self.consecutive_failures += 1
+        print(f"Consecutive failures: {self.consecutive_failures}")
+        self.loading_overlay.hide()
+
+    def cleanup_worker(self):
+        if self.refresh_worker:
+            self.refresh_worker.quit()
+            self.refresh_worker.wait()
+            self.refresh_worker = None
+
+    def closeEvent(self, event):
+        # Clean up worker thread when closing
+        if self.refresh_worker:
+            self.refresh_worker.quit()
+            self.refresh_worker.wait()
+        super().closeEvent(event)
+
     def set_refresh_callback(self, callback):
         self.refresh_callback = callback
 
@@ -1093,19 +1132,27 @@ class PRWatcherUI(QMainWindow):
                     self.recently_closed_frame.prs
                 )
                 
-                # Update refresh timer if refresh settings changed
+                # Get current settings before updating
                 current_settings = load_settings()
-                if (settings['refresh'] != current_settings.get('refresh')):
-                    self.setup_refresh_timer(settings['refresh'])
                 
-                # Save new settings
+                # Save new settings first
                 save_settings(settings)
                 self.settings = settings  # Update settings in memory
                 
-                # Trigger refresh if users changed or cache settings changed
-                if (settings['users'] != current_settings.get('users', []) or 
-                    settings['cache'] != current_settings.get('cache', {})):
-                    print("\nDebug - Settings changed, triggering immediate refresh...")
+                # Compare refresh settings properly
+                old_refresh = current_settings.get('refresh', {})
+                new_refresh = settings.get('refresh', {})
+                if (old_refresh.get('value') != new_refresh.get('value') or 
+                    old_refresh.get('unit') != new_refresh.get('unit')):
+                    print("\nDebug - Refresh settings changed:")
+                    print(f"  Old: {old_refresh.get('value')} {old_refresh.get('unit')}")
+                    print(f"  New: {new_refresh.get('value')} {new_refresh.get('unit')}")
+                    self.setup_refresh_timer(new_refresh)
+                
+                # Compare users and cache settings
+                if (settings.get('users') != current_settings.get('users', []) or 
+                    settings.get('cache') != current_settings.get('cache', {})):
+                    print("\nDebug - Users or cache settings changed, triggering immediate refresh...")
                     self.refresh_data()
                 else:
                     # Even if only thresholds changed, update the UI to reflect new colors/badges
@@ -1120,8 +1167,7 @@ class PRWatcherUI(QMainWindow):
         """Setup the refresh timer"""
         try:
             if not refresh_settings:
-                settings = load_settings()
-                refresh_settings = settings.get('refresh', {'value': 30, 'unit': 'minutes'})
+                refresh_settings = self.settings.get('refresh', {'value': 30, 'unit': 'minutes'})
             
             value = refresh_settings['value']
             unit = refresh_settings['unit']
@@ -1134,15 +1180,18 @@ class PRWatcherUI(QMainWindow):
             else:  # hours
                 interval = value * 60 * 60 * 1000
                 
-            print(f"Debug - Setting up refresh timer with interval: {interval}ms")
+            print(f"Debug - Setting up refresh timer with interval: {interval}ms ({value} {unit})")
             
-            if hasattr(self, 'refresh_timer'):
-                self.refresh_timer.stop()
+            # Stop existing timer if it exists
+            if hasattr(self, 'auto_refresh_timer'):
+                self.auto_refresh_timer.stop()
+                print("Debug - Stopped existing timer")
             
-            self.refresh_timer = QTimer(self)
-            self.refresh_timer.timeout.connect(self.refresh_data)
-            self.refresh_timer.start(interval)
-            print("Debug - Refresh timer started")
+            # Create and start new timer
+            self.auto_refresh_timer = QTimer(self)
+            self.auto_refresh_timer.timeout.connect(self.refresh_data)
+            self.auto_refresh_timer.start(interval)
+            print("Debug - Started new timer")
             
         except Exception as e:
             print(f"Error setting up refresh timer: {e}")
@@ -1209,6 +1258,10 @@ def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
             window.loading_overlay.hide()
     
     window.set_refresh_callback(refresh_callback)
+    
+    # Initialize refresh timer with current settings
+    window.setup_refresh_timer(settings.get('refresh'))
+    
     window.show()
     
     return app.exec()
