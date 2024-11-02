@@ -137,6 +137,9 @@ class TimelineEvent:
             # Parse author data
             author_data = data.get('author')
             if author_data:
+                if isinstance(author_data.get('date'), datetime):
+                    # If date is already a datetime object, convert it to string first
+                    author_data['date'] = author_data['date'].isoformat()
                 if 'email' in author_data:
                     author = Author.parse(author_data)
                 else:
@@ -145,8 +148,19 @@ class TimelineEvent:
                 author = None
 
             # Parse dates
-            created_at = datetime.fromisoformat(data['created_at']) if data.get('created_at') else None
-            updated_at = datetime.fromisoformat(data['updated_at']) if data.get('updated_at') else None
+            created_at = None
+            updated_at = None
+            if created_at_data := data.get('created_at'):
+                if isinstance(created_at_data, str):
+                    created_at = datetime.fromisoformat(created_at_data)
+                elif isinstance(created_at_data, datetime):
+                    created_at = created_at_data
+            
+            if updated_at_data := data.get('updated_at'):
+                if isinstance(updated_at_data, str):
+                    updated_at = datetime.fromisoformat(updated_at_data)
+                elif isinstance(updated_at_data, datetime):
+                    updated_at = updated_at_data
 
             return cls(
                 id=data['id'],

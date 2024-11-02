@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QScrollArea, QSizePolicy, QDialog,
-    QLineEdit, QSpinBox, QFormLayout, QTextEdit
+    QLineEdit, QSpinBox, QFormLayout, QTextEdit, QGroupBox, QComboBox
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QFont
@@ -11,6 +11,7 @@ import platform
 import os
 from notifications import notify, NOTIFIER_APP
 import yaml
+import time
 
 
 class SectionFrame(QFrame):
@@ -174,7 +175,7 @@ def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45):
     return badge
 
 
-def create_pr_card(pr_data, parent=None):
+def create_pr_card(pr_data, settings, parent=None):
     if isinstance(pr_data, list):
         if not pr_data:
             label = QLabel("No PRs to display")
@@ -216,6 +217,12 @@ def create_pr_card(pr_data, parent=None):
     
     header.addWidget(title)
     
+    # Add repo info
+    repo_text = f"{pr_data.repo_owner}/{pr_data.repo_name}"
+    repo_label = QLabel(repo_text)
+    repo_label.setStyleSheet("color: #8b949e; font-size: 11px;")
+    header.addWidget(repo_label)
+    
     # Badges
     badges_layout = QHBoxLayout()
     badges_layout.setSpacing(4)
@@ -227,46 +234,21 @@ def create_pr_card(pr_data, parent=None):
     # PR stats badges
     files_count = getattr(pr_data, 'changed_files', 0) or 0
     if files_count > 0:
-        files_color = "#28a745" if files_count < 10 else "#f0ad4e" if files_count < 50 else "#dc3545"
+        files_warning = settings.get('thresholds', {}).get('files', {}).get('warning', 10)
+        files_danger = settings.get('thresholds', {}).get('files', {}).get('danger', 50)
+        
+        files_color = (
+            "#28a745" if files_count < files_warning 
+            else "#f0ad4e" if files_count < files_danger 
+            else "#dc3545"
+        )
         files_badge = create_badge(f"{files_count} files", files_color, min_width=60)
         left_badges.addWidget(files_badge)
     
     additions = getattr(pr_data, 'additions', 0) or 0
     deletions = getattr(pr_data, 'deletions', 0) or 0
     if additions > 0 or deletions > 0:
-        # Create a badge with both additions and deletions
-        changes_text = f"  +{additions} -{deletions}  "
-        changes_badge = QFrame()
-        changes_badge.setStyleSheet("""
-            QFrame {
-                background-color: #2d2d2d;
-                border-radius: 12px;
-                min-width: 100px;
-                max-width: 120px;
-                min-height: 22px;
-                max-height: 22px;
-            }
-        """)
-        
-        changes_layout = QHBoxLayout(changes_badge)
-        changes_layout.setContentsMargins(8, 0, 8, 0)
-        changes_layout.setSpacing(4)
-        
-        # Additions label with green text
-        additions_label = QLabel(f"+{additions}")
-        additions_label.setStyleSheet("color: #28a745; font-size: 10px; padding: 0;")
-        changes_layout.addWidget(additions_label)
-        
-        # Separator
-        separator = QLabel("/")
-        separator.setStyleSheet("color: #8b949e; font-size: 10px; padding: 0;")
-        changes_layout.addWidget(separator)
-        
-        # Deletions label with red text
-        deletions_label = QLabel(f"-{deletions}")
-        deletions_label.setStyleSheet("color: #dc3545; font-size: 10px; padding: 0;")
-        changes_layout.addWidget(deletions_label)
-        
+        changes_badge = create_changes_badge(additions, deletions, settings)
         left_badges.addWidget(changes_badge)
     
     badges_layout.addLayout(left_badges)
@@ -415,16 +397,47 @@ class SettingsDialog(QDialog):
         form.addRow("Users to watch:", self.users_edit)
         
         # Refresh interval
+        refresh_container = QHBoxLayout()
         self.refresh_interval = QSpinBox()
-        self.refresh_interval.setRange(5, 3600)  # 5 seconds to 1 hour
-        self.refresh_interval.setSuffix(" seconds")
-        form.addRow("Refresh interval:", self.refresh_interval)
+        self.refresh_interval.setRange(5, 3600)
+        self.refresh_unit = QComboBox()
+        self.refresh_unit.addItems(["seconds", "minutes"])
+        refresh_container.addWidget(self.refresh_interval)
+        refresh_container.addWidget(self.refresh_unit)
+        form.addRow("Refresh interval:", refresh_container)
         
         # Cache duration
+        cache_container = QHBoxLayout()
         self.cache_duration = QSpinBox()
-        self.cache_duration.setRange(1, 24)  # 1 to 24 hours
-        self.cache_duration.setSuffix(" hours")
-        form.addRow("Cache duration:", self.cache_duration)
+        self.cache_duration.setRange(1, 24)
+        self.cache_unit = QComboBox()
+        self.cache_unit.addItems(["minutes", "hours", "days"])
+        cache_container.addWidget(self.cache_duration)
+        cache_container.addWidget(self.cache_unit)
+        form.addRow("Cache duration:", cache_container)
+        
+        # PR Changes thresholds
+        changes_group = QGroupBox("PR Changes Thresholds")
+        changes_layout = QFormLayout()
+        
+        # Files count thresholds
+        self.files_warning = QSpinBox()
+        self.files_warning.setRange(1, 1000)
+        self.files_danger = QSpinBox()
+        self.files_danger.setRange(1, 1000)
+        changes_layout.addRow("Files Warning Level:", self.files_warning)
+        changes_layout.addRow("Files Danger Level:", self.files_danger)
+        
+        # Lines changed thresholds
+        self.lines_warning = QSpinBox()
+        self.lines_warning.setRange(1, 10000)
+        self.lines_danger = QSpinBox()
+        self.lines_danger.setRange(1, 10000)
+        changes_layout.addRow("Lines Warning Level:", self.lines_warning)
+        changes_layout.addRow("Lines Danger Level:", self.lines_danger)
+        
+        changes_group.setLayout(changes_layout)
+        layout.addWidget(changes_group)
         
         layout.addLayout(form)
         
@@ -446,14 +459,48 @@ class SettingsDialog(QDialog):
     def load_settings(self):
         settings = load_settings()
         self.users_edit.setPlainText("\n".join(settings.get('users', [])))
-        self.refresh_interval.setValue(settings.get('refresh_interval', 10))
-        self.cache_duration.setValue(settings.get('cache_duration', 1))
+        
+        # Load refresh interval
+        refresh = settings.get('refresh', {'value': 10, 'unit': 'seconds'})
+        self.refresh_interval.setValue(refresh['value'])
+        self.refresh_unit.setCurrentText(refresh['unit'])
+        
+        # Load cache duration
+        cache = settings.get('cache', {'value': 1, 'unit': 'hours'})
+        self.cache_duration.setValue(cache['value'])
+        self.cache_unit.setCurrentText(cache['unit'])
+        
+        # Load thresholds
+        thresholds = settings.get('thresholds', {
+            'files': {'warning': 10, 'danger': 50},
+            'lines': {'warning': 500, 'danger': 1000}
+        })
+        self.files_warning.setValue(thresholds['files']['warning'])
+        self.files_danger.setValue(thresholds['files']['danger'])
+        self.lines_warning.setValue(thresholds['lines']['warning'])
+        self.lines_danger.setValue(thresholds['lines']['danger'])
     
     def get_settings(self):
         return {
             'users': [u.strip() for u in self.users_edit.toPlainText().split('\n') if u.strip()],
-            'refresh_interval': self.refresh_interval.value(),
-            'cache_duration': self.cache_duration.value()
+            'refresh': {
+                'value': self.refresh_interval.value(),
+                'unit': self.refresh_unit.currentText()
+            },
+            'cache': {
+                'value': self.cache_duration.value(),
+                'unit': self.cache_unit.currentText()
+            },
+            'thresholds': {
+                'files': {
+                    'warning': self.files_warning.value(),
+                    'danger': self.files_danger.value()
+                },
+                'lines': {
+                    'warning': self.lines_warning.value(),
+                    'danger': self.lines_danger.value()
+                }
+            }
         }
 
 
@@ -461,21 +508,29 @@ def load_settings():
     settings_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.yaml')
     
     if not os.path.exists(settings_file):
-        # Try to migrate from users.txt
-        users = []
-        users_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'users.txt')
-        if os.path.exists(users_file):
-            with open(users_file, 'r') as f:
-                users = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-        
         # Default settings
         settings = {
-            'users': users,
-            'refresh_interval': 10,  # 10 seconds
-            'cache_duration': 1      # 1 hour
+            'users': [],
+            'refresh': {
+                'value': 10,
+                'unit': 'seconds'
+            },
+            'cache': {
+                'value': 1,
+                'unit': 'hours'
+            },
+            'thresholds': {
+                'files': {
+                    'warning': 10,
+                    'danger': 50
+                },
+                'lines': {
+                    'warning': 500,
+                    'danger': 1000
+                }
+            }
         }
         
-        # Save default settings
         save_settings(settings)
         return settings
     
@@ -622,7 +677,18 @@ class PRWatcherUI(QMainWindow):
         # Set up auto-refresh timer
         self.auto_refresh_timer = QTimer(self)
         self.auto_refresh_timer.timeout.connect(self.refresh_data)
-        self.auto_refresh_timer.start(10000)  # 10 seconds
+        
+        # Load settings and set initial refresh interval
+        self.settings = load_settings()
+        refresh_value = self.settings.get('refresh', {}).get('value', 10)
+        refresh_unit = self.settings.get('refresh', {}).get('unit', 'seconds')
+        
+        if refresh_unit == 'minutes':
+            refresh_ms = refresh_value * 60 * 1000
+        else:  # seconds
+            refresh_ms = refresh_value * 1000
+        
+        self.auto_refresh_timer.start(refresh_ms)
         
         # Initialize tracking for PRs with empty sets
         self.previously_open_prs = set()
@@ -640,10 +706,6 @@ class PRWatcherUI(QMainWindow):
                 color: #ffffff;
             }
         """)
-        
-        # Load settings
-        self.settings = load_settings()
-        self.auto_refresh_timer.setInterval(self.settings.get('refresh_interval', 10) * 1000)
     
     def show_test_notification(self):
         notify(NOTIFIER_APP, "GitHub PR Watcher", "Test notification - System is working!")
@@ -806,7 +868,7 @@ class PRWatcherUI(QMainWindow):
         # Add PR cards
         for pr in prs:
             if pr:
-                card = create_pr_card(pr)
+                card = create_pr_card(pr, self.settings)
                 frame.layout().addWidget(card)
 
     def show_settings(self):
@@ -814,8 +876,19 @@ class PRWatcherUI(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.settings = dialog.get_settings()
             save_settings(self.settings)
+            
+            # Convert refresh interval to milliseconds based on unit
+            refresh_value = self.settings['refresh']['value']
+            refresh_unit = self.settings['refresh']['unit']
+            
+            if refresh_unit == 'minutes':
+                refresh_ms = refresh_value * 60 * 1000
+            else:  # seconds
+                refresh_ms = refresh_value * 1000
+            
             # Update refresh timer
-            self.auto_refresh_timer.setInterval(self.settings['refresh_interval'] * 1000)
+            self.auto_refresh_timer.setInterval(refresh_ms)
+            
             # Trigger immediate refresh
             self.refresh_data()
 
@@ -823,9 +896,13 @@ class PRWatcherUI(QMainWindow):
 def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
             prs_that_need_attention_by_user, user_recently_closed_prs_by_user):
     app = QApplication([])
-    app.setStyle('Fusion')  # Use Fusion style for consistent cross-platform look
+    app.setStyle('Fusion')
     
     window = PRWatcherUI()
+    settings = load_settings()
+    window.settings = settings  # Store settings in window
+    window.consecutive_failures = 0  # Track failures for backoff
+    window.max_backoff = 5  # Maximum backoff in seconds
     
     # Update initial data
     window.update_pr_lists(
@@ -840,15 +917,98 @@ def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
         from utils import get_pr_data
         
         try:
+            if window.consecutive_failures > 0:
+                # Calculate backoff time (exponential with max limit)
+                backoff = min(2 ** (window.consecutive_failures - 1), window.max_backoff)
+                print(f"\nDebug - Backing off for {backoff} seconds due to previous failures")
+                time.sleep(backoff)
+            
             print("\nDebug - Fetching fresh PR data...")
             new_data = get_pr_data(window.settings.get('users', []))
             window.update_pr_lists(*new_data)
+            
+            # Reset failure count on success
+            window.consecutive_failures = 0
+            
         except Exception as e:
-            error_msg = f"Error refreshing data: {str(e)}"
-            print(f"Error: {error_msg}")
-            notify(NOTIFIER_APP, "Error", error_msg)
+            # Increment failure count
+            window.consecutive_failures += 1
+            print(f"Error refreshing data: {str(e)}")
+            print(f"Consecutive failures: {window.consecutive_failures}")
     
     window.set_refresh_callback(refresh_callback)
     window.show()
     
     return app.exec()
+
+
+def get_changes_color(total_changes, settings):
+    """Calculate gradient color based on number of changes"""
+    warning_level = settings.get('thresholds', {}).get('lines', {}).get('warning', 500)
+    danger_level = settings.get('thresholds', {}).get('lines', {}).get('danger', 1000)
+    
+    if total_changes <= warning_level:
+        return "#28a745"  # Pure green for small changes
+    elif total_changes <= danger_level:
+        # Calculate position between warning and danger
+        ratio = (total_changes - warning_level) / (danger_level - warning_level)
+        # Create a gradient from green to yellow to red
+        if ratio <= 0.5:
+            # Green to yellow
+            sub_ratio = ratio * 2
+            return f"qlineargradient(x1:0, y1:0, x2:1, y2:0, " \
+                   f"stop:0 #28a745, " \
+                   f"stop:0.5 #28a745, " \
+                   f"stop:1 #ffc107)"
+        else:
+            # Yellow to red
+            sub_ratio = (ratio - 0.5) * 2
+            return f"qlineargradient(x1:0, y1:0, x2:1, y2:0, " \
+                   f"stop:0 #ffc107, " \
+                   f"stop:0.5 #ffc107, " \
+                   f"stop:1 #dc3545)"
+    else:
+        return "#dc3545"  # Pure red for large changes
+
+def create_changes_badge(additions, deletions, settings):
+    """Create a badge showing additions and deletions with color gradient"""
+    total_changes = additions + deletions
+    bg_color = get_changes_color(total_changes, settings)
+    
+    changes_badge = QFrame()
+    changes_badge.setStyleSheet(f"""
+        QFrame {{
+            background: {bg_color};
+            border-radius: 12px;
+            min-width: 100px;
+            max-width: 120px;
+            min-height: 22px;
+            max-height: 22px;
+        }}
+        QLabel {{
+            color: white;
+            font-size: 10px;
+            padding: 0;
+        }}
+    """)
+    
+    layout = QHBoxLayout(changes_badge)
+    layout.setContentsMargins(8, 0, 8, 0)
+    layout.setSpacing(4)
+    
+    # Show additions in green text
+    additions_label = QLabel(f"+{additions}")
+    additions_label.setStyleSheet("color: #98ff98; font-size: 10px; font-weight: bold;")  # Light green
+    layout.addWidget(additions_label)
+    
+    # Separator
+    separator = QLabel("/")
+    separator.setStyleSheet("color: white; font-size: 10px;")
+    layout.addWidget(separator)
+    
+    # Show deletions in red text
+    deletions_label = QLabel(f"-{deletions}")
+    deletions_label.setStyleSheet("color: #ffb3b3; font-size: 10px; font-weight: bold;")  # Light red
+    layout.addWidget(deletions_label)
+    
+    return changes_badge
