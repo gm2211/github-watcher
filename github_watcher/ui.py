@@ -21,7 +21,16 @@ class SectionFrame(QFrame):
     def __init__(self, title, parent=None):
         super().__init__(parent)
         self.setObjectName("sectionFrame")
+        self.title = title  # Store title as instance variable
         self.prs = {}  # Initialize prs attribute
+        self.spinner_label = None  # Initialize as None
+        self.spinner_timer = None  # Initialize as None
+        self.is_loading = False  # Track loading state
+        self.scroll_area = None  # Initialize scroll area as None
+        self.content_widget = None  # Initialize content widget as None
+        self.content_layout = None  # Initialize content layout as None
+        self.is_expanded = True
+        
         self.setStyleSheet("""
             QFrame#sectionFrame {
                 background-color: #1e1e1e;
@@ -37,7 +46,12 @@ class SectionFrame(QFrame):
         self.main_layout.setContentsMargins(10, 10, 10, 10)
         self.main_layout.setSpacing(5)
         
-        # Header container
+        # Create UI elements
+        self.create_header()
+        self.create_scroll_area()
+
+    def create_header(self):
+        """Create header section"""
         header_container = QFrame()
         header_container.setFixedHeight(30)
         header_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -46,17 +60,20 @@ class SectionFrame(QFrame):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(5)
         
-        # Left side of header (title and toggle)
+        # Left side of header (title, toggle, and spinner)
         left_header = QWidget()
         left_header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        left_layout = QHBoxLayout(left_header)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(5)
+        self.left_layout = QHBoxLayout(left_header)  # Store reference to left_layout
+        self.left_layout.setContentsMargins(0, 0, 0, 0)
+        self.left_layout.setSpacing(5)
         
         # Title label
-        self.title_label = QLabel(title)
+        self.title_label = QLabel(self.title)  # Use stored title
         self.title_label.setFont(QFont("", 14, QFont.Weight.Bold))
-        left_layout.addWidget(self.title_label)
+        self.left_layout.addWidget(self.title_label)
+        
+        # Create spinner
+        self.create_spinner()
         
         # Toggle button
         self.toggle_button = QPushButton("▼")
@@ -74,82 +91,158 @@ class SectionFrame(QFrame):
         """)
         self.toggle_button.setFixedSize(20, 20)
         self.toggle_button.clicked.connect(self.toggle_content)
-        left_layout.addWidget(self.toggle_button)
-        left_layout.addStretch()
+        self.left_layout.addWidget(self.toggle_button)
+        self.left_layout.addStretch()
         
         header_layout.addWidget(left_header)
         self.main_layout.addWidget(header_container)
-        
-        # Scroll Area
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background: transparent;
-            }
-            QScrollArea > QWidget > QWidget {
-                background: transparent;
-            }
-            QScrollBar:vertical {
-                background: #2d2d2d;
-                width: 14px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #404040;
-                min-height: 20px;
-                border-radius: 7px;
-            }
-            QScrollBar::add-line:vertical {
-                height: 0px;
-            }
-            QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: none;
-            }
-        """)
-        
-        # Content container inside scroll area
-        self.content_container = QWidget()
-        self.content_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        self.content_container.setStyleSheet("background: transparent;")
-        self.content_layout = QVBoxLayout(self.content_container)
-        self.content_layout.setContentsMargins(0, 5, 0, 0)
-        self.content_layout.setSpacing(5)
-        self.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        
-        self.scroll_area.setWidget(self.content_container)
-        self.main_layout.addWidget(self.scroll_area)
-        
-        # Make header clickable
-        header_container.mousePressEvent = self.toggle_content
-        header_container.setCursor(Qt.CursorShape.PointingHandCursor)
-        
-        # Start collapsed
-        self.is_expanded = True
-        self.toggle_content()
-    
-    def toggle_content(self, event=None):
+
+    def create_scroll_area(self):
+        """Create or recreate scroll area and content widget"""
+        try:
+            # Clean up old widgets if they exist
+            if hasattr(self, 'scroll_area'):
+                try:
+                    self.scroll_area.deleteLater()
+                except:
+                    pass
+            if hasattr(self, 'content_widget'):
+                try:
+                    self.content_widget.deleteLater()
+                except:
+                    pass
+            
+            # Create new widgets
+            self.scroll_area = QScrollArea()
+            self.scroll_area.setWidgetResizable(True)
+            self.scroll_area.setStyleSheet("""
+                QScrollArea {
+                    border: none;
+                    background-color: transparent;
+                }
+            """)
+            
+            self.content_widget = QWidget()
+            self.content_layout = QVBoxLayout(self.content_widget)
+            self.content_layout.setContentsMargins(0, 0, 0, 0)
+            self.content_layout.setSpacing(5)
+            
+            self.scroll_area.setWidget(self.content_widget)
+            self.main_layout.addWidget(self.scroll_area)
+            
+        except Exception as e:
+            print(f"Error creating scroll area: {e}")
+
+    def toggle_content(self):
+        """Toggle the visibility of the content"""
+        if not self.scroll_area:
+            return
+            
         self.is_expanded = not self.is_expanded
         self.scroll_area.setVisible(self.is_expanded)
         self.toggle_button.setText("▼" if self.is_expanded else "▶")
-        
-        # Update minimum height based on state
-        if self.is_expanded:
-            self.setMinimumHeight(0)
-        else:
-            self.setMinimumHeight(50)  # Just enough for header
-    
-    def set_empty(self, is_empty):
-        """Collapse section if empty"""
-        if is_empty and self.is_expanded:
-            self.toggle_content()
-    
+
     def layout(self):
-        return self.content_layout
+        """Get the content layout"""
+        return self.content_layout if self.content_layout else self.main_layout
+
+    def create_spinner(self):
+        """Create spinner label and timer"""
+        try:
+            # Clean up old spinner if it exists
+            if self.spinner_label:
+                try:
+                    self.spinner_label.deleteLater()
+                except:
+                    pass
+            if self.spinner_timer:
+                try:
+                    self.spinner_timer.stop()
+                    self.spinner_timer.deleteLater()
+                except:
+                    pass
+            
+            # Create new spinner
+            self.spinner_label = QLabel("⟳")
+            self.spinner_label.setFixedWidth(20)
+            self.spinner_label.setStyleSheet("""
+                QLabel {
+                    color: #0d6efd;
+                    font-size: 14px;
+                    padding: 0 5px;
+                }
+            """)
+            self.spinner_label.hide()  # Hidden by default
+            
+            # Add to layout if we have one
+            if hasattr(self, 'left_layout'):
+                self.left_layout.addWidget(self.spinner_label)
+            
+            # Create new timer
+            self.spinner_timer = QTimer(self)
+            self.spinner_timer.timeout.connect(self.rotate_spinner)
+            self.spinner_timer.setInterval(50)  # 50ms for smoother rotation
+            self.spinner_rotation = 0
+            
+        except Exception as e:
+            print(f"Warning: Error creating spinner: {e}")
+            self.spinner_label = None
+            self.spinner_timer = None
+
+    def start_loading(self):
+        """Start loading animation"""
+        if self.is_loading:
+            return
+            
+        self.is_loading = True
+        
+        try:
+            # Recreate spinner if it was deleted
+            if not self.spinner_label or not self.spinner_label.parent():  # Check parent instead of isValid
+                self.create_spinner()
+            
+            if self.spinner_label and self.spinner_label.parent():
+                self.spinner_label.show()
+                if self.spinner_timer:
+                    self.spinner_timer.start()
+        except RuntimeError:
+            # If the Qt object was deleted, recreate it
+            self.create_spinner()
+            if self.spinner_label:
+                self.spinner_label.show()
+                if self.spinner_timer:
+                    self.spinner_timer.start()
+        except Exception as e:
+            print(f"Warning: Error starting loading animation: {e}")
+
+    def stop_loading(self):
+        """Stop loading animation"""
+        self.is_loading = False
+        try:
+            if self.spinner_timer and self.spinner_timer.isActive():
+                self.spinner_timer.stop()
+            if self.spinner_label and self.spinner_label.parent():  # Check parent instead of isValid
+                self.spinner_label.hide()
+        except RuntimeError:
+            # Qt object already deleted, just ignore
+            pass
+        except Exception as e:
+            print(f"Warning: Error stopping loading animation: {e}")
+
+    def rotate_spinner(self):
+        """Rotate the spinner icon"""
+        if not self.spinner_label or not self.is_loading:
+            return
+            
+        self.spinner_rotation = (self.spinner_rotation + 30) % 360
+        self.spinner_label.setStyleSheet(f"""
+            QLabel {{
+                color: #0d6efd;
+                font-size: 14px;
+                padding: 0 5px;
+                transform: rotate({self.spinner_rotation}deg);
+            }}
+        """)
 
 
 def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45, opacity=1.0):
@@ -976,8 +1069,11 @@ class PRWatcherUI(QMainWindow):
         self.progress_label.show()
         self.progress_label.setText("Starting refresh...")
         
-        # Reset loading sections
+        # Reset loading sections and start loading animations
         self.loading_sections = {}
+        for frame in [self.open_prs_frame, self.needs_review_frame, 
+                     self.changes_requested_frame, self.recently_closed_frame]:
+            frame.start_loading()
         
         # Create and start worker threads for each section
         sections = ['review', 'open', 'attention', 'closed']
@@ -1021,19 +1117,36 @@ class PRWatcherUI(QMainWindow):
         """Handle refresh completion for a specific section"""
         print(f"Debug - Section {section} refresh completed")
         
-        # Map section names to data indices and frames
+        # Map section names to frames
         section_map = {
-            'open': (0, self.open_prs_frame),
-            'review': (1, self.needs_review_frame),
-            'attention': (2, self.changes_requested_frame),
-            'closed': (3, self.recently_closed_frame)
+            'open': self.open_prs_frame,
+            'review': self.needs_review_frame,
+            'attention': self.changes_requested_frame,
+            'closed': self.recently_closed_frame
         }
         
         if section in section_map:
-            idx, frame = section_map[section]
-            # Create a tuple with empty dicts except for the refreshed section
-            section_data = tuple({} if i != idx else data[idx] for i in range(4))
-            self.update_pr_lists(*section_data)
+            frame = section_map[section]
+            # Start loading animation
+            frame.start_loading()
+            
+            # Get the relevant data from the tuple based on section
+            section_data = data[{
+                'open': 0,
+                'review': 1,
+                'attention': 2,
+                'closed': 3
+            }[section]]
+            
+            # Update only this section's frame
+            print(f"Debug - Updating {section} section with {sum(len(prs) for prs in section_data.values() if isinstance(prs, list))} PRs")
+            self._update_section(frame, section_data)
+            
+            # Store the updated data in the frame
+            frame.prs = section_data
+            
+            # Stop loading animation
+            frame.stop_loading()
 
     def handle_refresh_error(self, error_msg):
         print(f"Error refreshing data: {error_msg}")
@@ -1135,60 +1248,76 @@ class PRWatcherUI(QMainWindow):
         self._update_section(self.recently_closed_frame, user_recently_closed_prs_by_user)
 
     def _update_section(self, frame, prs):
-        # Clear existing content
-        for i in reversed(range(frame.layout().count())):
-            widget = frame.layout().itemAt(i).widget()
-            if widget:
-                widget.deleteLater()
-        
-        # Store the PR data in the frame
-        frame.prs = prs  # Add this line to store the PR data
-        
-        is_empty = not prs
-        if is_empty:
-            label = QLabel("No PRs to display")
-            frame.layout().addWidget(label)
-            # Auto-collapse if empty
-            if frame.is_expanded:
+        """Update a section with new PR data"""
+        try:
+            # Ensure scroll area exists
+            if not frame.scroll_area or not frame.scroll_area.parent():  # Check parent instead of isValid
+                frame.create_scroll_area()
+            
+            # Clear existing content safely
+            if frame.content_layout:
+                for i in reversed(range(frame.content_layout.count())):
+                    item = frame.content_layout.itemAt(i)
+                    if item and item.widget():
+                        item.widget().deleteLater()
+            
+            # Store the PR data in the frame
+            frame.prs = prs
+            
+            is_empty = not prs
+            if is_empty:
+                label = QLabel("No PRs to display")
+                frame.content_layout.addWidget(label)
+                # Auto-collapse if empty
+                if frame.is_expanded:
+                    frame.toggle_content()
+                return
+            
+            # Auto-expand if not empty and was collapsed
+            if not frame.is_expanded and frame.scroll_area and frame.scroll_area.parent():
                 frame.toggle_content()
-            return
-        
-        # Auto-expand if not empty and was collapsed
-        if not frame.is_expanded:
-            frame.toggle_content()
-        
-        # Handle dict of PRs
-        if isinstance(prs, dict):
-            all_prs = []
-            for user_prs in prs.values():
-                if isinstance(user_prs, list):
-                    all_prs.extend(user_prs)
-                elif user_prs:
-                    all_prs.append(user_prs)
-            prs = all_prs
-        elif not isinstance(prs, (list, tuple)):
-            prs = [prs]
-        
-        # Filter PRs based on section
-        if frame.title_label.text() == "Open PRs":
-            prs = [pr for pr in prs if getattr(pr, 'state', '') == 'open' and not getattr(pr, 'merged_at', None)]
-        elif frame.title_label.text() == "Recently Closed":
-            prs = [pr for pr in prs if getattr(pr, 'state', '') == 'closed' or getattr(pr, 'merged_at', None)]
-        
-        # Check if section should be empty after filtering
-        if not prs:
-            label = QLabel("No PRs to display")
-            frame.layout().addWidget(label)
-            # Auto-collapse if empty after filtering
-            if frame.is_expanded:
-                frame.toggle_content()
-            return
-        
-        # Add PR cards
-        for pr in prs:
-            if pr:
-                card = create_pr_card(pr, self.settings)
-                frame.layout().addWidget(card)
+            
+            # Handle dict of PRs
+            if isinstance(prs, dict):
+                all_prs = []
+                for user_prs in prs.values():
+                    if isinstance(user_prs, list):
+                        all_prs.extend(user_prs)
+                    elif user_prs:
+                        all_prs.append(user_prs)
+                prs = all_prs
+            elif not isinstance(prs, (list, tuple)):
+                prs = [prs]
+            
+            # Filter PRs based on section
+            if frame.title_label.text() == "Open PRs":
+                prs = [pr for pr in prs if getattr(pr, 'state', '') == 'open' and not getattr(pr, 'merged_at', None)]
+            elif frame.title_label.text() == "Recently Closed":
+                prs = [pr for pr in prs if getattr(pr, 'state', '') == 'closed' or getattr(pr, 'merged_at', None)]
+            
+            # Check if section should be empty after filtering
+            if not prs:
+                label = QLabel("No PRs to display")
+                frame.content_layout.addWidget(label)
+                # Auto-collapse if empty after filtering
+                if frame.is_expanded and frame.scroll_area and frame.scroll_area.parent():
+                    frame.toggle_content()
+                return
+            
+            # Add PR cards
+            for pr in prs:
+                if pr:
+                    try:
+                        card = create_pr_card(pr, self.settings)
+                        frame.content_layout.addWidget(card)
+                    except Exception as e:
+                        print(f"Warning: Error creating PR card: {e}")
+                        continue
+                    
+        except Exception as e:
+            print(f"Error updating section: {e}")
+            # Try to recreate the section's widgets
+            frame.create_scroll_area()
 
     def show_settings(self):
         """Show settings dialog"""

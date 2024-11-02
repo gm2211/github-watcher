@@ -157,8 +157,7 @@ def cache_pr_data(github_prs, users, data):
     print(f"Debug - Data contains:")
     print(f"  - Open PRs: {len(data[0])}")
     print(f"  - Needs Review: {len(data[1])}")
-    print(f"  - Needs Attention: {len(data[2])}")
-    print(f"  - Recently Closed: {len(data[3])}")
+    print(f"  - Recently Closed: {len(data[2])}")
     
     github_prs.cache.set(cache_key, cache_data, "all_pr_data")
     print("\nDebug - Cached complete PR data set")
