@@ -17,6 +17,7 @@ import time
 from github_auth import get_github_api_key
 from github_prs import GitHubPRs
 from objects import TimelineEventType
+import shutil
 
 
 class SectionFrame(QFrame):
@@ -588,193 +589,194 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setup_ui()
-        self.load_settings()
-
-    def get_settings(self):
-        """Get current settings values"""
-        return {
-            'thresholds': {
-                'additions': {
-                    'warning': self.additions_warning.value(),
-                    'danger': self.additions_danger.value()
-                },
-                'deletions': {
-                    'warning': self.deletions_warning.value(),
-                    'danger': self.deletions_danger.value()
-                },
-                'files': {
-                    'warning': self.files_warning.value(),
-                    'danger': self.files_danger.value()
-                }
-            },
-            'cache': {
-                'value': self.cache_value.value(),
-                'unit': self.cache_unit.currentText()
-            },
-            'refresh': {
-                'value': self.refresh_value.value(),
-                'unit': self.refresh_unit.currentText()
-            },
-            'users': [u.strip() for u in self.users_text.toPlainText().split('\n') if u.strip()]
-        }
-
-    def accept(self):
-        """Handle dialog acceptance"""
-        try:
-            self.save_settings()
-            super().accept()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save settings: {str(e)}")
-
-    def load_settings(self):
-        """Load settings from file"""
-        settings = load_settings()
+        self.setMinimumWidth(400)
         
-        # Load thresholds
-        thresholds = settings.get('thresholds', {})
-        
-        # Additions thresholds
-        additions = thresholds.get('additions', {})
-        self.additions_warning.setValue(additions.get('warning', 300))
-        self.additions_danger.setValue(additions.get('danger', 1000))
-        
-        # Deletions thresholds
-        deletions = thresholds.get('deletions', {})
-        self.deletions_warning.setValue(deletions.get('warning', 1000))
-        self.deletions_danger.setValue(deletions.get('danger', 10000))
-        
-        # Files thresholds
-        files = thresholds.get('files', {})
-        self.files_warning.setValue(files.get('warning', 10))
-        self.files_danger.setValue(files.get('danger', 50))
-        
-        # Load cache settings
-        cache = settings.get('cache', {})
-        self.cache_value.setValue(cache.get('value', 1))
-        self.cache_unit.setCurrentText(cache.get('unit', 'hours'))
-        
-        # Load refresh settings
-        refresh = settings.get('refresh', {})
-        self.refresh_value.setValue(refresh.get('value', 30))
-        self.refresh_unit.setCurrentText(refresh.get('unit', 'minutes'))
-        
-        # Load users
-        users = settings.get('users', [])
-        self.users_text.setPlainText('\n'.join(users))
-
-    def save_settings(self):
-        """Save settings to file"""
-        settings = {
-            'thresholds': {
-                'additions': {
-                    'warning': self.additions_warning.value(),
-                    'danger': self.additions_danger.value()
-                },
-                'deletions': {
-                    'warning': self.deletions_warning.value(),
-                    'danger': self.deletions_danger.value()
-                },
-                'files': {
-                    'warning': self.files_warning.value(),
-                    'danger': self.files_danger.value()
-                }
-            },
-            'cache': {
-                'value': self.cache_value.value(),
-                'unit': self.cache_unit.currentText()
-            },
-            'refresh': {
-                'value': self.refresh_value.value(),
-                'unit': self.refresh_unit.currentText()
-            },
-            'users': [u.strip() for u in self.users_text.toPlainText().split('\n') if u.strip()]
-        }
-        
-        save_settings(settings)
-
-    def setup_ui(self):
-        """Setup the settings dialog UI"""
         layout = QVBoxLayout(self)
         
         # Create tabs
         tabs = QTabWidget()
-        layout.addWidget(tabs)
-        
-        # Thresholds tab
-        thresholds_tab = QWidget()
-        thresholds_layout = QFormLayout(thresholds_tab)
-        
-        # Additions thresholds
-        self.additions_warning = QSpinBox()
-        self.additions_warning.setMaximum(10000)
-        self.additions_danger = QSpinBox()
-        self.additions_danger.setMaximum(10000)
-        thresholds_layout.addRow("Additions Warning:", self.additions_warning)
-        thresholds_layout.addRow("Additions Danger:", self.additions_danger)
-        
-        # Deletions thresholds
-        self.deletions_warning = QSpinBox()
-        self.deletions_warning.setMaximum(100000)
-        self.deletions_danger = QSpinBox()
-        self.deletions_danger.setMaximum(100000)
-        thresholds_layout.addRow("Deletions Warning:", self.deletions_warning)
-        thresholds_layout.addRow("Deletions Danger:", self.deletions_danger)
-        
-        # Files thresholds
-        self.files_warning = QSpinBox()
-        self.files_warning.setMaximum(1000)
-        self.files_danger = QSpinBox()
-        self.files_danger.setMaximum(1000)
-        thresholds_layout.addRow("Files Warning:", self.files_warning)
-        thresholds_layout.addRow("Files Danger:", self.files_danger)
-        
-        tabs.addTab(thresholds_tab, "Thresholds")
-        
-        # Cache and Refresh tab
-        timing_tab = QWidget()
-        timing_layout = QFormLayout(timing_tab)
-        
-        # Cache settings
-        cache_widget = QWidget()
-        cache_layout = QHBoxLayout(cache_widget)
-        self.cache_value = QSpinBox()
-        self.cache_value.setMaximum(24)
-        self.cache_unit = QComboBox()
-        self.cache_unit.addItems(['seconds', 'minutes', 'hours'])
-        cache_layout.addWidget(self.cache_value)
-        cache_layout.addWidget(self.cache_unit)
-        timing_layout.addRow("Cache Duration:", cache_widget)
-        
-        # Refresh settings
-        refresh_widget = QWidget()
-        refresh_layout = QHBoxLayout(refresh_widget)
-        self.refresh_value = QSpinBox()
-        self.refresh_value.setMaximum(60)
-        self.refresh_unit = QComboBox()
-        self.refresh_unit.addItems(['seconds', 'minutes', 'hours'])
-        refresh_layout.addWidget(self.refresh_value)
-        refresh_layout.addWidget(self.refresh_unit)
-        timing_layout.addRow("Refresh Interval:", refresh_widget)
-        
-        tabs.addTab(timing_tab, "Timing")
         
         # Users tab
         users_tab = QWidget()
         users_layout = QVBoxLayout(users_tab)
-        self.users_text = QPlainTextEdit()
-        users_layout.addWidget(QLabel("Users (one per line):"))
-        users_layout.addWidget(self.users_text)
+        
+        # Users list
+        users_group = QGroupBox("GitHub Users to Watch")
+        users_group_layout = QVBoxLayout(users_group)
+        
+        self.users_text = QTextEdit()
+        self.users_text.setPlaceholderText("Enter GitHub usernames, one per line")
+        current_users = load_settings().get('users', [])
+        self.users_text.setText("\n".join(current_users))
+        users_group_layout.addWidget(self.users_text)
+        
+        users_layout.addWidget(users_group)
         tabs.addTab(users_tab, "Users")
         
-        # Buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | 
-            QDialogButtonBox.StandardButton.Cancel
+        # Timing tab
+        timing_tab = QWidget()
+        timing_layout = QFormLayout(timing_tab)
+        
+        # Cache settings
+        cache_group = QGroupBox("Cache Settings")
+        cache_layout = QFormLayout(cache_group)
+        
+        self.cache_value = QSpinBox()
+        self.cache_value.setRange(1, 24)
+        current_cache = load_settings().get('cache', {})
+        self.cache_value.setValue(current_cache.get('value', 1))
+        self.cache_unit = QComboBox()
+        self.cache_unit.addItems(['hours'])
+        self.cache_unit.setCurrentText(current_cache.get('unit', 'hours'))
+        
+        cache_row = QHBoxLayout()
+        cache_row.addWidget(self.cache_value)
+        cache_row.addWidget(self.cache_unit)
+        
+        cache_layout.addRow("Cache Duration:", cache_row)
+        
+        # Add Clear Cache button
+        clear_cache_btn = QPushButton("Clear Cache")
+        clear_cache_btn.clicked.connect(self.clear_cache)
+        cache_layout.addRow("", clear_cache_btn)
+        
+        timing_layout.addWidget(cache_group)
+        
+        # Refresh settings
+        refresh_group = QGroupBox("Refresh Settings")
+        refresh_layout = QFormLayout(refresh_group)
+        
+        self.refresh_value = QSpinBox()
+        self.refresh_value.setRange(1, 60)
+        current_refresh = load_settings().get('refresh', {})
+        self.refresh_value.setValue(current_refresh.get('value', 30))
+        self.refresh_unit = QComboBox()
+        self.refresh_unit.addItems(['seconds', 'minutes', 'hours'])
+        self.refresh_unit.setCurrentText(current_refresh.get('unit', 'seconds'))
+        
+        refresh_row = QHBoxLayout()
+        refresh_row.addWidget(self.refresh_value)
+        refresh_row.addWidget(self.refresh_unit)
+        
+        refresh_layout.addRow("Refresh Interval:", refresh_row)
+        
+        timing_layout.addWidget(refresh_group)
+        tabs.addTab(timing_tab, "Timing")
+        
+        # Thresholds tab
+        thresholds_tab = QWidget()
+        thresholds_layout = QVBoxLayout(thresholds_tab)
+        
+        # Files thresholds
+        files_group = QGroupBox("Files Changed Thresholds")
+        files_layout = QFormLayout(files_group)
+        
+        current_thresholds = load_settings().get('thresholds', {})
+        files_thresholds = current_thresholds.get('files', {})
+        
+        self.files_warning = QSpinBox()
+        self.files_warning.setRange(1, 100)
+        self.files_warning.setValue(files_thresholds.get('warning', 10))
+        files_layout.addRow("Warning Level:", self.files_warning)
+        
+        self.files_danger = QSpinBox()
+        self.files_danger.setRange(1, 1000)
+        self.files_danger.setValue(files_thresholds.get('danger', 50))
+        files_layout.addRow("Danger Level:", self.files_danger)
+        
+        thresholds_layout.addWidget(files_group)
+        
+        # Lines changed thresholds
+        lines_group = QGroupBox("Lines Changed Thresholds")
+        lines_layout = QFormLayout(lines_group)
+        
+        lines_thresholds = current_thresholds.get('lines', {})
+        
+        self.lines_warning = QSpinBox()
+        self.lines_warning.setRange(1, 1000)
+        self.lines_warning.setValue(lines_thresholds.get('warning', 500))
+        lines_layout.addRow("Warning Level:", self.lines_warning)
+        
+        self.lines_danger = QSpinBox()
+        self.lines_danger.setRange(1, 10000)
+        self.lines_danger.setValue(lines_thresholds.get('danger', 1000))
+        lines_layout.addRow("Danger Level:", self.lines_danger)
+        
+        thresholds_layout.addWidget(lines_group)
+        
+        # Recently Closed threshold
+        recent_group = QGroupBox("Recently Closed Settings")
+        recent_layout = QFormLayout(recent_group)
+        
+        self.recent_threshold = QSpinBox()
+        self.recent_threshold.setRange(1, 30)
+        self.recent_threshold.setValue(current_thresholds.get('recently_closed_days', 7))
+        recent_layout.addRow("Show PRs closed within (days):", self.recent_threshold)
+        
+        thresholds_layout.addWidget(recent_group)
+        
+        # Add some stretch at the bottom
+        thresholds_layout.addStretch()
+        
+        tabs.addTab(thresholds_tab, "Thresholds")
+        
+        layout.addWidget(tabs)
+        
+        # Add dialog buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+    
+    def get_settings(self):
+        """Get current settings from dialog"""
+        settings = load_settings()  # Get existing settings as base
+        
+        # Update users
+        users_text = self.users_text.toPlainText()
+        settings['users'] = [u.strip() for u in users_text.split('\n') if u.strip()]
+        
+        # Update cache settings
+        settings['cache'] = {
+            'value': self.cache_value.value(),
+            'unit': self.cache_unit.currentText()
+        }
+        
+        # Update refresh settings
+        settings['refresh'] = {
+            'value': self.refresh_value.value(),
+            'unit': self.refresh_unit.currentText()
+        }
+        
+        # Update thresholds
+        settings['thresholds'] = {
+            'files': {
+                'warning': self.files_warning.value(),
+                'danger': self.files_danger.value()
+            },
+            'lines': {
+                'warning': self.lines_warning.value(),
+                'danger': self.lines_danger.value()
+            },
+            'recently_closed_days': self.recent_threshold.value()
+        }
+        
+        return settings
+
+    def clear_cache(self):
+        """Clear the cache directory"""
+        try:
+            cache_dir = ".cache"
+            if os.path.exists(cache_dir):
+                shutil.rmtree(cache_dir)
+                os.makedirs(cache_dir)  # Recreate empty cache dir
+                QMessageBox.information(self, "Success", "Cache cleared successfully!")
+            else:
+                QMessageBox.information(self, "Info", "Cache directory does not exist.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to clear cache: {str(e)}")
 
 
 def load_settings():
