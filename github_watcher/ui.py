@@ -2,7 +2,8 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QScrollArea, QSizePolicy, QDialog,
     QLineEdit, QSpinBox, QFormLayout, QTextEdit, QGroupBox, QComboBox,
-    QTabWidget, QDialogButtonBox, QPlainTextEdit, QMessageBox, QCheckBox
+    QTabWidget, QDialogButtonBox, QPlainTextEdit, QMessageBox, QCheckBox,
+    QListView
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon, QFont, QTransform, QPixmap, QPainter, QColor, QFontMetrics
@@ -926,6 +927,81 @@ class RefreshWorker(QThread):
             self.error.emit(str(e))
 
 
+class MultiSelectComboBox(QComboBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setView(QListView())
+        self.view().pressed.connect(self.handle_item_pressed)
+        self.selected_items = set()
+        
+        # Style the view
+        self.view().setStyleSheet("""
+            QListView {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+            }
+            QListView::item {
+                padding: 3px;
+            }
+            QListView::item:selected {
+                background-color: #0d6efd;
+                color: white;
+            }
+            QListView::item:hover {
+                background-color: #404040;
+            }
+        """)
+    
+    def handle_item_pressed(self, index):
+        item = self.model().itemFromIndex(index)
+        if not item:
+            return
+            
+        if index.row() == 0:  # "All Authors"
+            self.selected_items.clear()
+            if item.checkState() == Qt.CheckState.Checked:
+                item.setCheckState(Qt.CheckState.Unchecked)
+            else:
+                item.setCheckState(Qt.CheckState.Checked)
+                # Uncheck all other items
+                for i in range(1, self.count()):
+                    self.model().item(i).setCheckState(Qt.CheckState.Unchecked)
+        else:
+            if item.checkState() == Qt.CheckState.Checked:
+                item.setCheckState(Qt.CheckState.Unchecked)
+                self.selected_items.discard(item.text())
+                # If no items selected, check "All Authors"
+                if not self.selected_items:
+                    self.model().item(0).setCheckState(Qt.CheckState.Checked)
+            else:
+                item.setCheckState(Qt.CheckState.Checked)
+                self.selected_items.add(item.text())
+                # Uncheck "All Authors"
+                self.model().item(0).setCheckState(Qt.CheckState.Unchecked)
+        
+        # Update display text
+        self.updateText()
+        
+        # Emit current text changed signal
+        self.currentTextChanged.emit(self.currentText())
+    
+    def updateText(self):
+        if not self.selected_items:
+            self.setCurrentText("All Authors")
+        else:
+            self.setCurrentText(", ".join(sorted(self.selected_items)))
+    
+    def addItem(self, text):
+        super().addItem(text)
+        item = self.model().item(self.count() - 1)
+        item.setCheckState(Qt.CheckState.Unchecked)
+        if text == "All Authors":
+            item.setCheckState(Qt.CheckState.Checked)
+    
+    def getSelectedItems(self):
+        return self.selected_items if self.selected_items else {"All Authors"}
+
+
 class PRWatcherUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1086,7 +1162,7 @@ class PRWatcherUI(QMainWindow):
         user_filter_layout.addWidget(user_filter_label)
         
         # User filter combobox
-        self.user_filter = QComboBox()
+        self.user_filter = MultiSelectComboBox()
         self.user_filter.setStyleSheet("""
             QComboBox {
                 background-color: #2d2d2d;
@@ -1094,7 +1170,7 @@ class PRWatcherUI(QMainWindow):
                 border-radius: 3px;
                 color: white;
                 padding: 3px 10px;
-                min-width: 120px;
+                min-width: 200px;  /* Increased width for multiple selections */
                 font-size: 12px;
             }
             QComboBox::drop-down {
@@ -1104,12 +1180,6 @@ class PRWatcherUI(QMainWindow):
                 image: url(down-arrow.png);
                 width: 12px;
                 height: 12px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #2d2d2d;
-                border: 1px solid #404040;
-                selection-background-color: #0d6efd;
-                selection-color: white;
             }
         """)
         self.user_filter.currentTextChanged.connect(self.apply_filters)
@@ -1350,13 +1420,13 @@ class PRWatcherUI(QMainWindow):
             
             # Filter PRs based on draft visibility and user filter
             show_drafts = self.show_drafts_toggle.isChecked()
-            selected_user = self.user_filter.currentText()
+            selected_users = self.user_filter.getSelectedItems()
             
             filtered_prs = {}
             total_prs = 0
             for user, user_prs in prs.items():
                 # Apply user filter
-                if selected_user != "All Authors" and user != selected_user:
+                if "All Authors" not in selected_users and user not in selected_users:
                     continue
                 
                 # Apply section filter and draft filter
