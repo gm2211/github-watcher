@@ -1112,25 +1112,6 @@ class PRWatcherUI(QMainWindow):
         self.user_filter.currentTextChanged.connect(self.apply_filters)
         user_filter_layout.addWidget(self.user_filter)
         
-        # "Only" button
-        only_btn = QPushButton("Only")
-        only_btn.setFixedWidth(40)
-        only_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #404040;
-                border: none;
-                border-radius: 3px;
-                color: white;
-                font-size: 11px;
-                padding: 3px;
-            }
-            QPushButton:hover {
-                background-color: #505050;
-            }
-        """)
-        only_btn.clicked.connect(self.select_only_current_user)
-        user_filter_layout.addWidget(only_btn)
-        
         filters_layout.addWidget(user_filter_container)
         filters_layout.addStretch()  # Push filters to the left
         
@@ -1346,6 +1327,17 @@ class PRWatcherUI(QMainWindow):
             # Store the PR data in the frame (store complete data)
             frame.prs = prs
             
+            # Filter PRs based on section type first
+            section_filters = {
+                "Open PRs": lambda pr: getattr(pr, 'state', '') == 'open' and not getattr(pr, 'merged_at', None),
+                "Recently Closed": lambda pr: getattr(pr, 'state', '') == 'closed' or getattr(pr, 'merged_at', None),
+                "Needs Review": lambda pr: True,  # Already filtered by GitHub query
+                "Changes Requested": lambda pr: True,  # Already filtered by GitHub query
+            }
+            
+            # Apply section-specific filter
+            section_filter = section_filters.get(frame.title, lambda pr: True)
+            
             # Filter PRs based on draft visibility and user filter
             show_drafts = self.show_drafts_toggle.isChecked()
             selected_user = self.user_filter.currentText()
@@ -1357,10 +1349,10 @@ class PRWatcherUI(QMainWindow):
                 if selected_user != "All Authors" and user != selected_user:
                     continue
                 
-                # Apply draft filter
+                # Apply section filter and draft filter
                 filtered_user_prs = [
                     pr for pr in user_prs 
-                    if show_drafts or not getattr(pr, 'draft', False)
+                    if section_filter(pr) and (show_drafts or not getattr(pr, 'draft', False))
                 ]
                 
                 if filtered_user_prs:
@@ -1560,21 +1552,16 @@ class PRWatcherUI(QMainWindow):
             self._update_section(frame, frame.prs)
 
     def update_user_filter(self):
-        """Update user filter dropdown with current users"""
+        """Update user filter dropdown with users from settings"""
         current_text = self.user_filter.currentText()
         self.user_filter.clear()
         self.user_filter.addItem("All Authors")
         
-        # Get unique users from all sections
-        users = set()
-        for frame in [self.open_prs_frame, self.needs_review_frame, 
-                     self.changes_requested_frame, self.recently_closed_frame]:
-            if hasattr(frame, 'prs'):  # Check if frame has prs attribute
-                for user in frame.prs.keys():
-                    users.add(user)
+        # Get users from settings
+        users = sorted(self.settings.get('users', []))
         
         # Add users to dropdown
-        for user in sorted(users):
+        for user in users:
             self.user_filter.addItem(user)
         
         # Restore previous selection if it still exists
@@ -1584,15 +1571,9 @@ class PRWatcherUI(QMainWindow):
         else:
             self.user_filter.setCurrentIndex(0)  # Default to "All Authors"
 
-    def select_only_current_user(self):
-        """Select only the current user in the filter"""
-        current_user = self.user_filter.currentText()
-        if current_user and current_user != "All Authors":
-            self.apply_filters()
-
     def apply_filters(self):
-        """Apply all filters (drafts, grouping, user) to the UI"""
-        # Re-render all sections with current filters
+        """Apply all filters (drafts, grouping, user) to the UI without refreshing data"""
+        # Re-render all sections with current filters using existing data
         for frame in [
             self.open_prs_frame,
             self.needs_review_frame,
@@ -1670,6 +1651,9 @@ def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
             cache_ttl=timedelta(hours=cache_duration)
         )
     window.github_prs = github_prs
+    
+    # Initialize user filter before updating PR lists
+    window.update_user_filter()
     
     # Update initial data
     window.update_pr_lists(
