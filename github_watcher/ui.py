@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QScrollArea, QSizePolicy, QDialog,
     QLineEdit, QSpinBox, QFormLayout, QTextEdit, QGroupBox, QComboBox,
-    QTabWidget, QDialogButtonBox, QPlainTextEdit, QMessageBox
+    QTabWidget, QDialogButtonBox, QPlainTextEdit, QMessageBox, QCheckBox
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon, QFont, QTransform
@@ -22,8 +22,8 @@ class SectionFrame(QFrame):
     def __init__(self, title, parent=None):
         super().__init__(parent)
         self.setObjectName("sectionFrame")
-        self.title = title  # Store title as instance variable
-        self.prs = {}  # Initialize prs attribute
+        self.title = title  # Store original title
+        self.prs = {}
         self.spinner_label = None  # Initialize as None
         self.spinner_timer = None  # Initialize as None
         self.is_loading = False  # Track loading state
@@ -68,10 +68,21 @@ class SectionFrame(QFrame):
         self.left_layout.setContentsMargins(0, 0, 0, 0)
         self.left_layout.setSpacing(5)
         
-        # Title label
-        self.title_label = QLabel(self.title)  # Use stored title
+        # Title label with count
+        self.title_label = QLabel(self.title)
         self.title_label.setFont(QFont("", 14, QFont.Weight.Bold))
         self.left_layout.addWidget(self.title_label)
+        
+        # Count label
+        self.count_label = QLabel("(0)")
+        self.count_label.setStyleSheet("""
+            QLabel {
+                color: #8b949e;
+                font-size: 12px;
+                padding-left: 5px;
+            }
+        """)
+        self.left_layout.addWidget(self.count_label)
         
         # Create spinner
         self.create_spinner()
@@ -244,6 +255,10 @@ class SectionFrame(QFrame):
                 transform: rotate({self.spinner_rotation}deg);
             }}
         """)
+
+    def update_count(self, count):
+        """Update the count display"""
+        self.count_label.setText(f"({count})")
 
 
 def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45, opacity=1.0):
@@ -1043,27 +1058,30 @@ class PRWatcherUI(QMainWindow):
         scroll_layout = QVBoxLayout(scroll_widget)
         
         # Add draft toggle after title
-        self.show_drafts_toggle = QPushButton("Hide Drafts")
-        self.show_drafts_toggle.setCheckable(True)
+        self.show_drafts_toggle = QCheckBox("Show Draft PRs")
         self.show_drafts_toggle.setChecked(True)  # Show drafts by default
         self.show_drafts_toggle.setStyleSheet("""
-            QPushButton {
-                background-color: #404040;
-                border: none;
-                border-radius: 5px;
-                padding: 5px 10px;
+            QCheckBox {
                 color: white;
                 font-size: 12px;
-                height: 25px;
+                padding: 5px;
             }
-            QPushButton:checked {
-                background-color: #0d6efd;
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border-radius: 3px;
+                border: 1px solid #404040;
+                background: #2d2d2d;
             }
-            QPushButton:hover {
-                background-color: #505050;
+            QCheckBox::indicator:checked {
+                background: #0d6efd;
+                image: url(check.png);  /* Optional: add a checkmark image */
+            }
+            QCheckBox::indicator:hover {
+                border-color: #505050;
             }
         """)
-        self.show_drafts_toggle.clicked.connect(self.toggle_drafts_visibility)
+        self.show_drafts_toggle.stateChanged.connect(self.toggle_drafts_visibility)
         left_layout.addWidget(self.show_drafts_toggle)
         
         # Create section frames (remove draft section)
@@ -1340,6 +1358,7 @@ class PRWatcherUI(QMainWindow):
             # Filter PRs based on draft visibility
             show_drafts = self.show_drafts_toggle.isChecked()
             filtered_prs = {}
+            total_prs = 0
             for user, user_prs in prs.items():
                 filtered_user_prs = [
                     pr for pr in user_prs 
@@ -1347,6 +1366,10 @@ class PRWatcherUI(QMainWindow):
                 ]
                 if filtered_user_prs:
                     filtered_prs[user] = filtered_user_prs
+                    total_prs += len(filtered_user_prs)
+            
+            # Update count
+            frame.update_count(total_prs)
             
             is_empty = not filtered_prs
             if is_empty:
@@ -1481,10 +1504,6 @@ class PRWatcherUI(QMainWindow):
 
     def toggle_drafts_visibility(self):
         """Toggle visibility of draft PRs without refreshing"""
-        # Update toggle button text
-        show_drafts = self.show_drafts_toggle.isChecked()
-        self.show_drafts_toggle.setText("Hide Drafts" if show_drafts else "Show Drafts")
-        
         # Re-render all sections with current data
         for frame in [
             self.open_prs_frame,
