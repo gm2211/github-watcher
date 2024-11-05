@@ -418,52 +418,31 @@ def create_pr_card(pr_data, settings, parent=None):
     right_badges = QHBoxLayout()
     right_badges.setSpacing(4)
     
-    # Draft badge check
-    is_draft = getattr(pr_data, 'draft', None)
-    print(f"  Draft status check:")
-    print(f"    - draft attribute: {is_draft}")
-    print(f"    - type: {type(is_draft)}")
-    
-    if is_draft:
-        print("    - Adding DRAFT badge")
+    # Status badges (full opacity)
+    if getattr(pr_data, 'draft', False):
         draft_badge = create_badge("DRAFT", "#6c757d", opacity=1.0)  # Gray
         right_badges.addWidget(draft_badge)
     
     # Check for review status in timeline
-    if timeline := getattr(pr_data, 'timeline', []):
-        print(f"  Processing {len(timeline)} timeline events:")
+    if timeline := getattr(pr_data, 'timeline', []) or []:
         latest_review_state = None
         latest_review_author = None
-        
-        # Go through events from newest to oldest
-        for event in reversed(timeline):
-            print(f"    - Event: {event.eventType}")
-            if event.eventType == TimelineEventType.APPROVED:
-                latest_review_state = TimelineEventType.APPROVED
+        for event in reversed(timeline):  # Go through events from newest to oldest
+            if event.eventType in [TimelineEventType.APPROVED, TimelineEventType.CHANGES_REQUESTED]:
+                latest_review_state = event.eventType
                 latest_review_author = event.author.login if event.author else None
-                print(f"      Found approval by {latest_review_author}")
                 break
-            elif event.eventType == TimelineEventType.CHANGES_REQUESTED:
-                latest_review_state = TimelineEventType.CHANGES_REQUESTED
-                latest_review_author = event.author.login if event.author else None
-                print(f"      Found changes requested by {latest_review_author}")
-                break
-        
-        print(f"  Final review state: {latest_review_state}")
-        print(f"  Review author: {latest_review_author}")
         
         if latest_review_state == TimelineEventType.APPROVED:
             approved_text = "APPROVED"
             if latest_review_author:
                 approved_text += f" by {latest_review_author}"
-            print(f"    Adding approval badge: {approved_text}")
             approved_badge = create_badge(approved_text, "#28a745", opacity=1.0)  # Green
             right_badges.addWidget(approved_badge)
         elif latest_review_state == TimelineEventType.CHANGES_REQUESTED:
             changes_text = "CHANGES REQUESTED"
             if latest_review_author:
                 changes_text += f" by {latest_review_author}"
-            print(f"    Adding changes requested badge: {changes_text}")
             changes_badge = create_badge(changes_text, "#dc3545", opacity=1.0)  # Red
             right_badges.addWidget(changes_badge)
     
@@ -472,11 +451,35 @@ def create_pr_card(pr_data, settings, parent=None):
     CLOSED_COLOR = "#dc3545"  # Red
     OPEN_COLOR = "#28a745"    # Green
     
-    if getattr(pr_data, 'merged_at', None):
+    # Debug PR status
+    merged_at = getattr(pr_data, 'merged_at', None)
+    closed_at = getattr(pr_data, 'closed_at', None)
+    state = str(getattr(pr_data, 'state', '')).lower()
+    timeline = getattr(pr_data, 'timeline', []) or []
+    
+    # Check if PR is merged - for now assume closed PRs are merged
+    # This is temporary until we fix the GitHub API query
+    is_merged = (
+        merged_at is not None or 
+        any(getattr(event, 'eventType', None) == TimelineEventType.MERGED for event in timeline) or
+        (closed_at is not None and state == 'closed')  # Assume closed means merged for now
+    )
+    
+    print(f"\nDebug - PR #{pr_data.number} status:")
+    print(f"  merged_at: {merged_at}")
+    print(f"  closed_at: {closed_at}")
+    print(f"  state: {state}")
+    print(f"  is_merged: {is_merged}")
+    
+    # Status badge
+    if is_merged:
+        print(f"  -> Setting MERGED badge")
         status_badge = create_badge("MERGED", MERGED_COLOR, opacity=1.0)
-    elif getattr(pr_data, 'state', '') == 'closed':
+    elif closed_at is not None:
+        print(f"  -> Setting CLOSED badge")
         status_badge = create_badge("CLOSED", CLOSED_COLOR, opacity=1.0)
     else:
+        print(f"  -> Setting OPEN badge")
         status_badge = create_badge("OPEN", OPEN_COLOR, opacity=1.0)
     right_badges.addWidget(status_badge)
     
@@ -1329,14 +1332,21 @@ class PRWatcherUI(QMainWindow):
             
             # Filter PRs based on section type first
             section_filters = {
-                "Open PRs": lambda pr: getattr(pr, 'state', '') == 'open' and not getattr(pr, 'merged_at', None),
-                "Recently Closed": lambda pr: getattr(pr, 'state', '') == 'closed' or getattr(pr, 'merged_at', None),
+                "Open PRs": lambda pr: str(getattr(pr, 'state', '')).lower() == 'open',
+                "Recently Closed": lambda pr: (
+                    getattr(pr, 'merged_at', None) is not None or  # Check merged first
+                    str(getattr(pr, 'state', '')).lower() in ['closed', str(TimelineEventType.CLOSED).lower()] or 
+                    getattr(pr, 'closed_at', None) is not None
+                ),
                 "Needs Review": lambda pr: True,  # Already filtered by GitHub query
                 "Changes Requested": lambda pr: True,  # Already filtered by GitHub query
             }
             
             # Apply section-specific filter
             section_filter = section_filters.get(frame.title, lambda pr: True)
+            
+            print(f"\nDebug - Processing section: {frame.title}")
+            print(f"Debug - Initial PR count: {sum(len(user_prs) for user_prs in prs.values())}")
             
             # Filter PRs based on draft visibility and user filter
             show_drafts = self.show_drafts_toggle.isChecked()
@@ -1350,14 +1360,21 @@ class PRWatcherUI(QMainWindow):
                     continue
                 
                 # Apply section filter and draft filter
-                filtered_user_prs = [
-                    pr for pr in user_prs 
-                    if section_filter(pr) and (show_drafts or not getattr(pr, 'draft', False))
-                ]
+                filtered_user_prs = []
+                for pr in user_prs:
+                    state = str(getattr(pr, 'state', '')).lower()
+                    merged = getattr(pr, 'merged_at', None) is not None
+                    closed = getattr(pr, 'closed_at', None) is not None
+                    print(f"Debug - PR #{pr.number} - State: {state}, Merged: {merged}, Closed: {closed}")
+                    
+                    if section_filter(pr) and (show_drafts or not getattr(pr, 'draft', False)):
+                        filtered_user_prs.append(pr)
                 
                 if filtered_user_prs:
                     filtered_prs[user] = filtered_user_prs
                     total_prs += len(filtered_user_prs)
+            
+            print(f"Debug - After filtering - Total PRs: {total_prs}")
             
             # Update count
             frame.update_count(total_prs)
