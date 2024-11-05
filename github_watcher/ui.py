@@ -1291,9 +1291,29 @@ class PRWatcherUI(QMainWindow):
         self.loading_label.hide()
 
     def closeEvent(self, event):
-        # Clean up all workers when closing
-        self.cleanup_workers()
-        super().closeEvent(event)
+        """Handle application close event"""
+        try:
+            # Stop refresh timer
+            if hasattr(self, 'auto_refresh_timer'):
+                self.auto_refresh_timer.stop()
+            
+            # Force quit any running workers
+            if hasattr(self, 'refresh_worker') and self.refresh_worker:
+                self.refresh_worker.terminate()  # Force terminate if running
+                self.refresh_worker.wait(1000)   # Wait max 1 second
+            
+            # Clean up other workers
+            if hasattr(self, 'workers'):
+                for worker in self.workers[:]:
+                    worker.terminate()  # Force terminate
+                    worker.wait(1000)   # Wait max 1 second
+                self.workers.clear()
+            
+            print("Debug - Application cleanup completed")
+            event.accept()
+        except Exception as e:
+            print(f"Warning: Error during cleanup: {e}")
+            event.accept()  # Accept the close event anyway
 
     def set_refresh_callback(self, callback):
         self.refresh_callback = callback
