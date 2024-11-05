@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QDialogButtonBox, QPlainTextEdit, QMessageBox, QCheckBox
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QIcon, QFont, QTransform
+from PyQt6.QtGui import QIcon, QFont, QTransform, QPixmap, QPainter, QColor, QFontMetrics
 import webbrowser
 from datetime import datetime, timezone, timedelta
 import platform
@@ -243,14 +243,14 @@ class SectionFrame(QFrame):
 
     def rotate_spinner(self):
         """Rotate the spinner icon"""
-        if not self.spinner_label or not self.is_loading:
-            return
-            
+        if not hasattr(self, 'spinner_rotation'):
+            self.spinner_rotation = 0
+        
         self.spinner_rotation = (self.spinner_rotation + 30) % 360
         self.spinner_label.setStyleSheet(f"""
             QLabel {{
                 color: #0d6efd;
-                font-size: 14px;
+                font-size: 16px;
                 padding: 0 5px;
                 transform: rotate({self.spinner_rotation}deg);
             }}
@@ -928,44 +928,34 @@ class PRWatcherUI(QMainWindow):
         super().__init__()
         self.setWindowTitle("GitHub PR Watcher")
         
-        # Set window icon
-        try:
-            if platform.system() == "Darwin":
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                icon_path = os.path.join(current_dir, "gh_notify.app/Contents/Resources/applet.icns")
-                self.setWindowIcon(QIcon(icon_path))
-        except Exception as e:
-            print(f"Could not set icon: {e}")
-        
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         
+        # Create section frames first
+        self.needs_review_frame = SectionFrame("Needs Review")
+        self.changes_requested_frame = SectionFrame("Changes Requested")
+        self.open_prs_frame = SectionFrame("Open PRs")
+        self.recently_closed_frame = SectionFrame("Recently Closed")
+        
         # Create header with buttons
         header_layout = QHBoxLayout()
         
-        # Left side: spinner and title
+        # Left side: loading indicator and title
         left_layout = QHBoxLayout()
         
-        # Spinner
-        self.spinner_label = QLabel("⟳")
-        self.spinner_label.setFixedWidth(20)
-        self.spinner_label.setStyleSheet("""
+        # Loading indicator (just text, no spinner)
+        self.loading_label = QLabel("Loading...")
+        self.loading_label.setStyleSheet("""
             QLabel {
                 color: #0d6efd;
-                font-size: 16px;
+                font-size: 12px;
                 padding: 0 5px;
             }
         """)
-        self.spinner_label.hide()  # Hidden by default
-        left_layout.addWidget(self.spinner_label)
-        
-        # Initialize spinner rotation and timer
-        self.spinner_rotation = 0
-        self.spinner_timer = QTimer(self)
-        self.spinner_timer.timeout.connect(self.rotate_spinner)
-        self.spinner_timer.setInterval(50)  # 50ms for smoother rotation
+        self.loading_label.hide()  # Hidden by default
+        left_layout.addWidget(self.loading_label)
         
         # Title
         title = QLabel("GitHub PR Watcher")
@@ -1044,22 +1034,13 @@ class PRWatcherUI(QMainWindow):
         header_layout.addLayout(buttons_layout)
         main_layout.addLayout(header_layout)
         
-        # Create scroll area for sections
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-        """)
+        # Add filters container
+        filters_layout = QHBoxLayout()
+        filters_layout.setSpacing(10)
         
-        scroll_widget = QWidget()
-        scroll_layout = QVBoxLayout(scroll_widget)
-        
-        # Add draft toggle after title
+        # Draft toggle
         self.show_drafts_toggle = QCheckBox("Show Draft PRs")
-        self.show_drafts_toggle.setChecked(True)  # Show drafts by default
+        self.show_drafts_toggle.setChecked(True)
         self.show_drafts_toggle.setStyleSheet("""
             QCheckBox {
                 color: white;
@@ -1075,30 +1056,103 @@ class PRWatcherUI(QMainWindow):
             }
             QCheckBox::indicator:checked {
                 background: #0d6efd;
-                image: url(check.png);  /* Optional: add a checkmark image */
             }
             QCheckBox::indicator:hover {
                 border-color: #505050;
             }
         """)
         self.show_drafts_toggle.stateChanged.connect(self.toggle_drafts_visibility)
-        left_layout.addWidget(self.show_drafts_toggle)
+        filters_layout.addWidget(self.show_drafts_toggle)
         
         # Group by user toggle
         self.group_by_user_toggle = QCheckBox("Group by User")
-        self.group_by_user_toggle.setChecked(False)  # Don't group by default
-        self.group_by_user_toggle.setStyleSheet(self.show_drafts_toggle.styleSheet())  # Reuse style
+        self.group_by_user_toggle.setChecked(False)
+        self.group_by_user_toggle.setStyleSheet(self.show_drafts_toggle.styleSheet())
         self.group_by_user_toggle.stateChanged.connect(self.toggle_user_grouping)
-        left_layout.addWidget(self.group_by_user_toggle)
+        filters_layout.addWidget(self.group_by_user_toggle)
         
-        left_layout.addStretch()  # Push checkboxes to the left
+        # User filter
+        user_filter_container = QWidget()
+        user_filter_layout = QHBoxLayout(user_filter_container)
+        user_filter_layout.setContentsMargins(0, 0, 0, 0)
+        user_filter_layout.setSpacing(5)
         
-        # Create section frames (remove draft section)
-        self.needs_review_frame = SectionFrame("Needs Review")
-        self.changes_requested_frame = SectionFrame("Changes Requested")
-        self.open_prs_frame = SectionFrame("Open PRs")
-        self.recently_closed_frame = SectionFrame("Recently Closed")
+        # User filter label
+        user_filter_label = QLabel("Filter by Author:")
+        user_filter_label.setStyleSheet("color: white; font-size: 12px;")
+        user_filter_layout.addWidget(user_filter_label)
         
+        # User filter combobox
+        self.user_filter = QComboBox()
+        self.user_filter.setStyleSheet("""
+            QComboBox {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                border-radius: 3px;
+                color: white;
+                padding: 3px 10px;
+                min-width: 120px;
+                font-size: 12px;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                image: url(down-arrow.png);
+                width: 12px;
+                height: 12px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                selection-background-color: #0d6efd;
+                selection-color: white;
+            }
+        """)
+        self.user_filter.currentTextChanged.connect(self.apply_filters)
+        user_filter_layout.addWidget(self.user_filter)
+        
+        # "Only" button
+        only_btn = QPushButton("Only")
+        only_btn.setFixedWidth(40)
+        only_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #404040;
+                border: none;
+                border-radius: 3px;
+                color: white;
+                font-size: 11px;
+                padding: 3px;
+            }
+            QPushButton:hover {
+                background-color: #505050;
+            }
+        """)
+        only_btn.clicked.connect(self.select_only_current_user)
+        user_filter_layout.addWidget(only_btn)
+        
+        filters_layout.addWidget(user_filter_container)
+        filters_layout.addStretch()  # Push filters to the left
+        
+        left_layout.addLayout(filters_layout)
+        
+        # Initialize user filter with "All Authors"
+        self.user_filter.addItem("All Authors")
+        
+        # Create scroll area for sections
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+        """)
+        
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Add sections to scroll area
         scroll_layout.addWidget(self.needs_review_frame)
         scroll_layout.addWidget(self.changes_requested_frame)
         scroll_layout.addWidget(self.open_prs_frame)
@@ -1155,107 +1209,32 @@ class PRWatcherUI(QMainWindow):
         notify(NOTIFIER_APP, "GitHub PR Watcher", "Test notification - System is working!")
 
     def refresh_data(self):
-        # Clean up any existing workers
-        self.cleanup_workers()
+        if self.refresh_worker and self.refresh_worker.isRunning():
+            print("Debug - Refresh already in progress, skipping")
+            return
             
         print("\nDebug - Starting refresh...")
-        self.spinner_label.show()
-        self.spinner_timer.start()
-        self.progress_label.show()
-        self.progress_label.setText("Starting refresh...")
+        self.loading_label.show()
         
-        # Reset loading sections and start loading animations
-        self.loading_sections = {}
-        for frame in [self.open_prs_frame, self.needs_review_frame, 
-                     self.changes_requested_frame, self.recently_closed_frame]:
-            frame.start_loading()
-        
-        # Create and start worker threads for each section
-        sections = ['draft', 'review', 'open', 'attention', 'closed']
-        for section in sections:
-            worker = RefreshWorker(self.github_prs, self.settings.get('users', []), section)
-            worker.finished.connect(lambda data, s=section: self.handle_section_refresh(s, data))
-            worker.error.connect(self.handle_refresh_error)
-            worker.progress.connect(self.update_progress)
-            worker.finished.connect(lambda _, w=worker: self.cleanup_worker(w))
-            worker.error.connect(lambda _, w=worker: self.cleanup_worker(w))
-            self.workers.append(worker)
-            worker.start()
+        # Create and start worker thread
+        self.refresh_worker = RefreshWorker(self.github_prs, self.settings.get('users', []))
+        self.refresh_worker.finished.connect(lambda data: self.handle_refresh_success(data))  # Use lambda to handle data
+        self.refresh_worker.error.connect(self.handle_refresh_error)
+        self.refresh_worker.finished.connect(lambda _: self.cleanup_worker(self.refresh_worker))  # Pass worker explicitly
+        self.refresh_worker.error.connect(lambda _: self.cleanup_worker(self.refresh_worker))  # Pass worker explicitly
+        self.refresh_worker.start()
 
-    def update_progress(self, message):
-        """Update progress message"""
-        self.progress_label.setText(message)
-
-    def cleanup_worker(self, worker):
-        """Clean up a single worker"""
-        if worker in self.workers:
-            worker.quit()
-            worker.wait()
-            self.workers.remove(worker)
-            print(f"Debug - Cleaned up worker (remaining: {len(self.workers)})")
-            
-            # If this was the last worker, hide the spinner and progress
-            if not self.workers:
-                self.spinner_label.hide()
-                self.spinner_timer.stop()
-                self.progress_label.hide()
-                self.progress_label.setText("")
-
-    def cleanup_workers(self):
-        """Clean up all workers"""
-        for worker in self.workers[:]:  # Create a copy of the list to avoid modification during iteration
-            self.cleanup_worker(worker)
-        self.workers.clear()
-        print("Debug - Cleaned up all workers")
-
-    def handle_section_refresh(self, section, data):
-        """Handle refresh completion for a specific section"""
-        print(f"Debug - Section {section} refresh completed")
-        
-        # Map sections to frames and their filtering logic
-        section_map = {
-            'open': (self.open_prs_frame, lambda pr: (
-                getattr(pr, 'state', '') == 'open' and 
-                not getattr(pr, 'merged_at', None) and 
-                (self.show_drafts_toggle.isChecked() or not getattr(pr, 'draft', False))
-            )),
-            'review': (self.needs_review_frame, lambda pr: True),
-            'attention': (self.changes_requested_frame, lambda pr: True),
-            'closed': (self.recently_closed_frame, lambda pr: getattr(pr, 'state', '') == 'closed' or getattr(pr, 'merged_at', None))
-        }
-        
-        if section in section_map:
-            frame, filter_func = section_map[section]
-            
-            # Get the section-specific data from the correct tuple index
-            section_indices = {'open': 0, 'review': 1, 'attention': 2, 'closed': 3}
-            section_data = data[section_indices[section]]
-            
-            print(f"Debug - Processing {section} data with {sum(len(prs) for prs in section_data.values() if isinstance(prs, list))} PRs")
-            
-            # Apply section-specific filtering
-            filtered_data = {
-                user: [pr for pr in prs if filter_func(pr)]
-                for user, prs in section_data.items()
-            }
-            
-            # Remove empty user entries
-            filtered_data = {user: prs for user, prs in filtered_data.items() if prs}
-            
-            # Update the frame with filtered data
-            print(f"Debug - Updating {section} section with {sum(len(prs) for prs in filtered_data.values())} filtered PRs")
-            self._update_section(frame, filtered_data)
-            
-            # Store the filtered data
-            frame.prs = filtered_data
-            
-            # Stop loading animation
-            frame.stop_loading()
+    def handle_refresh_success(self, new_data):
+        print("Debug - Refresh completed successfully")
+        self.update_pr_lists(*new_data)
+        self.consecutive_failures = 0
+        self.loading_label.hide()
 
     def handle_refresh_error(self, error_msg):
         print(f"Error refreshing data: {error_msg}")
         self.consecutive_failures += 1
         print(f"Consecutive failures: {self.consecutive_failures}")
+        self.loading_label.hide()
 
     def closeEvent(self, event):
         # Clean up all workers when closing
@@ -1266,7 +1245,7 @@ class PRWatcherUI(QMainWindow):
         self.refresh_callback = callback
 
     def update_pr_lists(self, open_prs_by_user, prs_awaiting_review_by_user,
-                       prs_that_need_attention_by_user, user_recently_closed_prs_by_user):
+                        prs_that_need_attention_by_user, user_recently_closed_prs_by_user):
         # Get current state
         current_open_prs = set()
         current_closed_prs = set()
@@ -1345,7 +1324,10 @@ class PRWatcherUI(QMainWindow):
             self.previously_open_prs = current_open_prs.copy()
             self.previously_closed_prs = current_closed_prs.copy()
         
-        # Update UI
+        # Update user filter before updating sections
+        self.update_user_filter()
+        
+        # Update sections
         self._update_section(self.needs_review_frame, prs_awaiting_review_by_user)
         self._update_section(self.changes_requested_frame, prs_that_need_attention_by_user)
         self._update_section(self.open_prs_frame, open_prs_by_user)
@@ -1364,15 +1346,23 @@ class PRWatcherUI(QMainWindow):
             # Store the PR data in the frame (store complete data)
             frame.prs = prs
             
-            # Filter PRs based on draft visibility
+            # Filter PRs based on draft visibility and user filter
             show_drafts = self.show_drafts_toggle.isChecked()
+            selected_user = self.user_filter.currentText()
+            
             filtered_prs = {}
             total_prs = 0
             for user, user_prs in prs.items():
+                # Apply user filter
+                if selected_user != "All Authors" and user != selected_user:
+                    continue
+                
+                # Apply draft filter
                 filtered_user_prs = [
                     pr for pr in user_prs 
                     if show_drafts or not getattr(pr, 'draft', False)
                 ]
+                
                 if filtered_user_prs:
                     filtered_prs[user] = filtered_user_prs
                     total_prs += len(filtered_user_prs)
@@ -1558,22 +1548,6 @@ class PRWatcherUI(QMainWindow):
         if hasattr(self, 'loading_overlay'):
             self.loading_overlay.setGeometry(self.centralWidget().rect())
 
-    def rotate_spinner(self):
-        self.spinner_rotation = (self.spinner_rotation + 30) % 360
-        transform = QTransform()
-        transform.rotate(self.spinner_rotation)
-        self.spinner_label.setStyleSheet(f"""
-            QLabel {{
-                color: #0d6efd;
-                font-size: 16px;
-                padding: 0 5px;
-            }}
-        """)
-        # Use Qt's transform property for smoother rotation
-        self.spinner_label.setProperty("rotation", self.spinner_rotation)
-        self.spinner_label.style().unpolish(self.spinner_label)
-        self.spinner_label.style().polish(self.spinner_label)
-
     def toggle_drafts_visibility(self):
         """Toggle visibility of draft PRs without refreshing"""
         # Re-render all sections with current data
@@ -1584,6 +1558,89 @@ class PRWatcherUI(QMainWindow):
             self.recently_closed_frame
         ]:
             self._update_section(frame, frame.prs)
+
+    def update_user_filter(self):
+        """Update user filter dropdown with current users"""
+        current_text = self.user_filter.currentText()
+        self.user_filter.clear()
+        self.user_filter.addItem("All Authors")
+        
+        # Get unique users from all sections
+        users = set()
+        for frame in [self.open_prs_frame, self.needs_review_frame, 
+                     self.changes_requested_frame, self.recently_closed_frame]:
+            if hasattr(frame, 'prs'):  # Check if frame has prs attribute
+                for user in frame.prs.keys():
+                    users.add(user)
+        
+        # Add users to dropdown
+        for user in sorted(users):
+            self.user_filter.addItem(user)
+        
+        # Restore previous selection if it still exists
+        index = self.user_filter.findText(current_text)
+        if index >= 0:
+            self.user_filter.setCurrentIndex(index)
+        else:
+            self.user_filter.setCurrentIndex(0)  # Default to "All Authors"
+
+    def select_only_current_user(self):
+        """Select only the current user in the filter"""
+        current_user = self.user_filter.currentText()
+        if current_user and current_user != "All Authors":
+            self.apply_filters()
+
+    def apply_filters(self):
+        """Apply all filters (drafts, grouping, user) to the UI"""
+        # Re-render all sections with current filters
+        for frame in [
+            self.open_prs_frame,
+            self.needs_review_frame,
+            self.changes_requested_frame,
+            self.recently_closed_frame
+        ]:
+            self._update_section(frame, frame.prs)
+
+    def rotate_spinner(self):
+        """Rotate the spinner icon"""
+        if not hasattr(self, 'spinner_rotation'):
+            self.spinner_rotation = 0
+        
+        self.spinner_rotation = (self.spinner_rotation + 30) % 360
+        self.spinner_label.setStyleSheet(f"""
+            QLabel {{
+                color: #0d6efd;
+                font-size: 16px;
+                padding: 0 5px;
+                transform: rotate({self.spinner_rotation}deg);
+            }}
+        """)
+
+    def cleanup_worker(self, worker=None):
+        """Clean up a single worker"""
+        if worker is None:
+            worker = self.refresh_worker
+            
+        if worker:
+            worker.quit()
+            worker.wait()
+            if worker in self.workers:
+                self.workers.remove(worker)
+            if worker == self.refresh_worker:
+                self.refresh_worker = None
+            print("Debug - Cleaned up worker")
+
+    def cleanup_workers(self):
+        """Clean up all workers"""
+        # Clean up refresh worker
+        if self.refresh_worker:
+            self.cleanup_worker(self.refresh_worker)
+        
+        # Clean up any other workers
+        for worker in self.workers[:]:  # Create a copy of the list to avoid modification during iteration
+            self.cleanup_worker(worker)
+        self.workers.clear()
+        print("Debug - Cleaned up all workers")
 
 
 def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
