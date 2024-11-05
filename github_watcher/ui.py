@@ -1397,17 +1397,37 @@ class PRWatcherUI(QMainWindow):
             if self.group_by_user_toggle.isChecked():
                 # Group by user
                 for user, user_prs in filtered_prs.items():
-                    # Add user header
-                    user_header = QLabel(f"@{user}")
-                    user_header.setStyleSheet("""
+                    # Create user header container
+                    user_header_container = QWidget()
+                    user_header_layout = QHBoxLayout(user_header_container)
+                    user_header_layout.setContentsMargins(0, 5, 0, 5)
+                    user_header_layout.setSpacing(5)
+                    
+                    # Add user name
+                    user_label = QLabel(f"@{user}")
+                    user_label.setStyleSheet("""
                         QLabel {
                             color: #8b949e;
                             font-size: 12px;
                             font-weight: bold;
-                            padding: 5px 0;
                         }
                     """)
-                    frame.content_layout.addWidget(user_header)
+                    user_header_layout.addWidget(user_label)
+                    
+                    # Add PR count
+                    count_label = QLabel(f"({len(user_prs)})")
+                    count_label.setStyleSheet("""
+                        QLabel {
+                            color: #8b949e;
+                            font-size: 11px;
+                        }
+                    """)
+                    user_header_layout.addWidget(count_label)
+                    
+                    # Add stretch to push everything to the left
+                    user_header_layout.addStretch()
+                    
+                    frame.content_layout.addWidget(user_header_container)
                     
                     # Add user's PR cards
                     for pr in user_prs:
