@@ -15,6 +15,7 @@ import yaml
 import time
 from github_auth import get_github_api_key
 from github_prs import GitHubPRs
+from objects import TimelineEventType
 
 
 class SectionFrame(QFrame):
@@ -285,6 +286,12 @@ def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45, op
 
 
 def create_pr_card(pr_data, settings, parent=None):
+    print(f"\nDebug - Creating PR card for #{pr_data.number}:")
+    print(f"  Title: {pr_data.title}")
+    print(f"  State: {pr_data.state}")
+    print(f"  Draft: {getattr(pr_data, 'draft', None)}")
+    print(f"  Timeline events: {len(getattr(pr_data, 'timeline', []) or [])}")
+    
     if isinstance(pr_data, list):
         if not pr_data:
             label = QLabel("No PRs to display")
@@ -396,10 +403,54 @@ def create_pr_card(pr_data, settings, parent=None):
     right_badges = QHBoxLayout()
     right_badges.setSpacing(4)
     
-    # Status badges (full opacity)
-    if getattr(pr_data, 'draft', False):
+    # Draft badge check
+    is_draft = getattr(pr_data, 'draft', None)
+    print(f"  Draft status check:")
+    print(f"    - draft attribute: {is_draft}")
+    print(f"    - type: {type(is_draft)}")
+    
+    if is_draft:
+        print("    - Adding DRAFT badge")
         draft_badge = create_badge("DRAFT", "#6c757d", opacity=1.0)  # Gray
         right_badges.addWidget(draft_badge)
+    
+    # Check for review status in timeline
+    if timeline := getattr(pr_data, 'timeline', []):
+        print(f"  Processing {len(timeline)} timeline events:")
+        latest_review_state = None
+        latest_review_author = None
+        
+        # Go through events from newest to oldest
+        for event in reversed(timeline):
+            print(f"    - Event: {event.eventType}")
+            if event.eventType == TimelineEventType.APPROVED:
+                latest_review_state = TimelineEventType.APPROVED
+                latest_review_author = event.author.login if event.author else None
+                print(f"      Found approval by {latest_review_author}")
+                break
+            elif event.eventType == TimelineEventType.CHANGES_REQUESTED:
+                latest_review_state = TimelineEventType.CHANGES_REQUESTED
+                latest_review_author = event.author.login if event.author else None
+                print(f"      Found changes requested by {latest_review_author}")
+                break
+        
+        print(f"  Final review state: {latest_review_state}")
+        print(f"  Review author: {latest_review_author}")
+        
+        if latest_review_state == TimelineEventType.APPROVED:
+            approved_text = "APPROVED"
+            if latest_review_author:
+                approved_text += f" by {latest_review_author}"
+            print(f"    Adding approval badge: {approved_text}")
+            approved_badge = create_badge(approved_text, "#28a745", opacity=1.0)  # Green
+            right_badges.addWidget(approved_badge)
+        elif latest_review_state == TimelineEventType.CHANGES_REQUESTED:
+            changes_text = "CHANGES REQUESTED"
+            if latest_review_author:
+                changes_text += f" by {latest_review_author}"
+            print(f"    Adding changes requested badge: {changes_text}")
+            changes_badge = create_badge(changes_text, "#dc3545", opacity=1.0)  # Red
+            right_badges.addWidget(changes_badge)
     
     # Status badge colors
     MERGED_COLOR = "#6f42c1"  # Purple
@@ -435,35 +486,29 @@ def create_pr_card(pr_data, settings, parent=None):
     left_info = QVBoxLayout()
     left_info.setSpacing(1)  # Reduced from 2 to 1 for tighter spacing
     
-    # Create a container for all info items
-    info_items = QFrame()
-    info_items_layout = QVBoxLayout(info_items)
-    info_items_layout.setContentsMargins(0, 0, 0, 0)
-    info_items_layout.setSpacing(1)  # Minimal spacing between items
-    
     # Author info
     user = getattr(pr_data, 'user', None)
     if user and hasattr(user, 'login'):
         author_text = f"Author: {user.login}"
         author_label = QLabel(author_text)
         author_label.setStyleSheet("color: #8b949e; font-size: 11px; padding: 0;")
-        info_items_layout.addWidget(author_label)
+        left_info.addWidget(author_label)
     
     # Comments info
-    timeline = getattr(pr_data, 'timeline', [])
-    if timeline:
-        comments = [event for event in timeline if 'comments' in getattr(event, 'url', '')]
+    if timeline := getattr(pr_data, 'timeline', []):
+        comments = [event for event in timeline if event.eventType == TimelineEventType.COMMENTED]
         comments_count = len(comments)
         if comments_count > 0:
             comments_text = f"💬 {comments_count} comment{'s' if comments_count != 1 else ''}"
             comments_label = QLabel(comments_text)
             comments_label.setStyleSheet("color: #8b949e; font-size: 11px; padding: 0;")
-            info_items_layout.addWidget(comments_label)
+            left_info.addWidget(comments_label)
             
+            # Show latest comment info
             latest_comment = comments[-1]
-            if latest_comment:
-                comment_author = getattr(latest_comment.author, 'login', 'Unknown')
-                comment_date = getattr(latest_comment, 'created_at', None)
+            if latest_comment and latest_comment.author:
+                comment_author = latest_comment.author.login if hasattr(latest_comment.author, 'login') else latest_comment.author.name
+                comment_date = latest_comment.created_at
                 
                 if comment_date:
                     now = datetime.now(timezone.utc)
@@ -472,9 +517,8 @@ def create_pr_card(pr_data, settings, parent=None):
                     last_comment_text = f"Last comment by {comment_author} {time_text}"
                     last_comment_label = QLabel(last_comment_text)
                     last_comment_label.setStyleSheet("color: #8b949e; font-size: 11px; padding: 0;")
-                    info_items_layout.addWidget(last_comment_label)
+                    left_info.addWidget(last_comment_label)
     
-    left_info.addWidget(info_items)
     info_layout.addLayout(left_info)
     
     # Right info
@@ -998,7 +1042,31 @@ class PRWatcherUI(QMainWindow):
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
         
-        # Create section frames
+        # Add draft toggle after title
+        self.show_drafts_toggle = QPushButton("Show Drafts")
+        self.show_drafts_toggle.setCheckable(True)
+        self.show_drafts_toggle.setChecked(True)  # Show drafts by default
+        self.show_drafts_toggle.setStyleSheet("""
+            QPushButton {
+                background-color: #404040;
+                border: none;
+                border-radius: 5px;
+                padding: 5px 10px;
+                color: white;
+                font-size: 12px;
+                height: 25px;
+            }
+            QPushButton:checked {
+                background-color: #0d6efd;
+            }
+            QPushButton:hover {
+                background-color: #505050;
+            }
+        """)
+        self.show_drafts_toggle.clicked.connect(self.refresh_data)
+        left_layout.addWidget(self.show_drafts_toggle)
+        
+        # Create section frames (remove draft section)
         self.needs_review_frame = SectionFrame("Needs Review")
         self.changes_requested_frame = SectionFrame("Changes Requested")
         self.open_prs_frame = SectionFrame("Open PRs")
@@ -1076,7 +1144,7 @@ class PRWatcherUI(QMainWindow):
             frame.start_loading()
         
         # Create and start worker threads for each section
-        sections = ['review', 'open', 'attention', 'closed']
+        sections = ['draft', 'review', 'open', 'attention', 'closed']
         for section in sections:
             worker = RefreshWorker(self.github_prs, self.settings.get('users', []), section)
             worker.finished.connect(lambda data, s=section: self.handle_section_refresh(s, data))
@@ -1117,33 +1185,42 @@ class PRWatcherUI(QMainWindow):
         """Handle refresh completion for a specific section"""
         print(f"Debug - Section {section} refresh completed")
         
-        # Map section names to frames
+        # Map sections to frames and their filtering logic
         section_map = {
-            'open': self.open_prs_frame,
-            'review': self.needs_review_frame,
-            'attention': self.changes_requested_frame,
-            'closed': self.recently_closed_frame
+            'open': (self.open_prs_frame, lambda pr: (
+                getattr(pr, 'state', '') == 'open' and 
+                not getattr(pr, 'merged_at', None) and 
+                (self.show_drafts_toggle.isChecked() or not getattr(pr, 'draft', False))
+            )),
+            'review': (self.needs_review_frame, lambda pr: True),
+            'attention': (self.changes_requested_frame, lambda pr: True),
+            'closed': (self.recently_closed_frame, lambda pr: getattr(pr, 'state', '') == 'closed' or getattr(pr, 'merged_at', None))
         }
         
         if section in section_map:
-            frame = section_map[section]
-            # Start loading animation
-            frame.start_loading()
+            frame, filter_func = section_map[section]
             
-            # Get the relevant data from the tuple based on section
-            section_data = data[{
-                'open': 0,
-                'review': 1,
-                'attention': 2,
-                'closed': 3
-            }[section]]
+            # Get the section-specific data from the correct tuple index
+            section_indices = {'open': 0, 'review': 1, 'attention': 2, 'closed': 3}
+            section_data = data[section_indices[section]]
             
-            # Update only this section's frame
-            print(f"Debug - Updating {section} section with {sum(len(prs) for prs in section_data.values() if isinstance(prs, list))} PRs")
-            self._update_section(frame, section_data)
+            print(f"Debug - Processing {section} data with {sum(len(prs) for prs in section_data.values() if isinstance(prs, list))} PRs")
             
-            # Store the updated data in the frame
-            frame.prs = section_data
+            # Apply section-specific filtering
+            filtered_data = {
+                user: [pr for pr in prs if filter_func(pr)]
+                for user, prs in section_data.items()
+            }
+            
+            # Remove empty user entries
+            filtered_data = {user: prs for user, prs in filtered_data.items() if prs}
+            
+            # Update the frame with filtered data
+            print(f"Debug - Updating {section} section with {sum(len(prs) for prs in filtered_data.values())} filtered PRs")
+            self._update_section(frame, filtered_data)
+            
+            # Store the filtered data
+            frame.prs = filtered_data
             
             # Stop loading animation
             frame.stop_loading()

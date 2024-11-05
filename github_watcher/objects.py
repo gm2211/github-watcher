@@ -200,12 +200,29 @@ class TimelineEvent:
         parsed_events = []
         for event in events_data:
             try:
-                event_type_str = event.get('event')
-                if not event_type_str:
-                    continue
-
-                # Use from_string to safely convert event type
-                event_type = TimelineEventType.from_string(event_type_str)
+                # Determine event type based on event type or state
+                event_type = TimelineEventType.UNKNOWN
+                
+                # Check for review events
+                if event.get('event') == 'reviewed':
+                    if state := event.get('state', '').lower():
+                        if state == 'approved':
+                            event_type = TimelineEventType.APPROVED
+                        elif state == 'changes_requested':
+                            event_type = TimelineEventType.CHANGES_REQUESTED
+                        else:
+                            event_type = TimelineEventType.REVIEWED
+                # Check for other event types
+                elif event.get('event') == 'commented':
+                    event_type = TimelineEventType.COMMENTED
+                elif event.get('event') == 'merged':
+                    event_type = TimelineEventType.MERGED
+                elif event.get('event') == 'closed':
+                    event_type = TimelineEventType.CLOSED
+                elif event.get('event') == 'reopened':
+                    event_type = TimelineEventType.REOPENED
+                elif 'commit_id' in event:
+                    event_type = TimelineEventType.COMMITTED
 
                 # Parse author/actor data
                 author_data = event.get('author') or event.get('actor')
@@ -242,6 +259,7 @@ class TimelineEvent:
                     created_at=created_at,
                     updated_at=updated_at
                 )
+                print(f"Debug - Parsed event: {event_type}")
                 parsed_events.append(parsed_event)
 
             except Exception as e:

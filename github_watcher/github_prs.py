@@ -454,15 +454,33 @@ class GitHubPRs:
             # Fetch PRs for all users in parallel
             results = {}
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                for section_name, query in [
-                    ('open', "is:pr is:open draft:false"),
-                    ('review', "is:pr is:open review:none comments:0"),
-                    ('attention', f"is:pr is:open updated:<={self._not_recently_updated()} -is:draft"),
-                    ('closed', f"is:pr is:closed closed:>={self._recent_date()}")
-                ]:
-                    if section and section != section_name:
+                # Define section-specific queries
+                section_queries = {
+                    'open': "is:pr is:open",  # Show all open PRs, including drafts
+                    'review': (
+                        "is:pr is:open "
+                        "review:none "  # No reviews
+                        "comments:0 "  # No comments
+                        "-draft:true"  # Not draft
+                    ),
+                    'attention': (
+                        "is:pr is:open "
+                        "review:changes_requested "  # Changes requested
+                        "-draft:true"  # Not draft
+                    ),
+                    'closed': f"is:pr is:closed closed:>={self._recent_date()}"  # Recently closed PRs
+                }
+                
+                # Process only requested section or all sections
+                sections_to_process = [section] if section else section_queries.keys()
+                
+                for section_name in sections_to_process:
+                    if section_name not in section_queries:
                         continue
                         
+                    query = section_queries[section_name]
+                    print(f"\nDebug - Processing {section_name} with query: {query}")
+                    
                     # Fetch PRs for all users in parallel
                     futures = [
                         executor.submit(self._fetch_user_prs, user, query, 100)
