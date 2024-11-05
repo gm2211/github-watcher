@@ -1043,7 +1043,7 @@ class PRWatcherUI(QMainWindow):
         scroll_layout = QVBoxLayout(scroll_widget)
         
         # Add draft toggle after title
-        self.show_drafts_toggle = QPushButton("Show Drafts")
+        self.show_drafts_toggle = QPushButton("Hide Drafts")
         self.show_drafts_toggle.setCheckable(True)
         self.show_drafts_toggle.setChecked(True)  # Show drafts by default
         self.show_drafts_toggle.setStyleSheet("""
@@ -1063,7 +1063,7 @@ class PRWatcherUI(QMainWindow):
                 background-color: #505050;
             }
         """)
-        self.show_drafts_toggle.clicked.connect(self.refresh_data)
+        self.show_drafts_toggle.clicked.connect(self.toggle_drafts_visibility)
         left_layout.addWidget(self.show_drafts_toggle)
         
         # Create section frames (remove draft section)
@@ -1327,21 +1327,28 @@ class PRWatcherUI(QMainWindow):
     def _update_section(self, frame, prs):
         """Update a section with new PR data"""
         try:
-            # Ensure scroll area exists
-            if not frame.scroll_area or not frame.scroll_area.parent():  # Check parent instead of isValid
-                frame.create_scroll_area()
-            
-            # Clear existing content safely
+            # Clear existing content
             if frame.content_layout:
                 for i in reversed(range(frame.content_layout.count())):
                     item = frame.content_layout.itemAt(i)
                     if item and item.widget():
                         item.widget().deleteLater()
             
-            # Store the PR data in the frame
+            # Store the PR data in the frame (store complete data)
             frame.prs = prs
             
-            is_empty = not prs
+            # Filter PRs based on draft visibility
+            show_drafts = self.show_drafts_toggle.isChecked()
+            filtered_prs = {}
+            for user, user_prs in prs.items():
+                filtered_user_prs = [
+                    pr for pr in user_prs 
+                    if show_drafts or not getattr(pr, 'draft', False)
+                ]
+                if filtered_user_prs:
+                    filtered_prs[user] = filtered_user_prs
+            
+            is_empty = not filtered_prs
             if is_empty:
                 label = QLabel("No PRs to display")
                 frame.content_layout.addWidget(label)
@@ -1351,39 +1358,12 @@ class PRWatcherUI(QMainWindow):
                 return
             
             # Auto-expand if not empty and was collapsed
-            if not frame.is_expanded and frame.scroll_area and frame.scroll_area.parent():
+            if not frame.is_expanded:
                 frame.toggle_content()
             
-            # Handle dict of PRs
-            if isinstance(prs, dict):
-                all_prs = []
-                for user_prs in prs.values():
-                    if isinstance(user_prs, list):
-                        all_prs.extend(user_prs)
-                    elif user_prs:
-                        all_prs.append(user_prs)
-                prs = all_prs
-            elif not isinstance(prs, (list, tuple)):
-                prs = [prs]
-            
-            # Filter PRs based on section
-            if frame.title_label.text() == "Open PRs":
-                prs = [pr for pr in prs if getattr(pr, 'state', '') == 'open' and not getattr(pr, 'merged_at', None)]
-            elif frame.title_label.text() == "Recently Closed":
-                prs = [pr for pr in prs if getattr(pr, 'state', '') == 'closed' or getattr(pr, 'merged_at', None)]
-            
-            # Check if section should be empty after filtering
-            if not prs:
-                label = QLabel("No PRs to display")
-                frame.content_layout.addWidget(label)
-                # Auto-collapse if empty after filtering
-                if frame.is_expanded and frame.scroll_area and frame.scroll_area.parent():
-                    frame.toggle_content()
-                return
-            
-            # Add PR cards
-            for pr in prs:
-                if pr:
+            # Add PR cards for filtered PRs
+            for user, user_prs in filtered_prs.items():
+                for pr in user_prs:
                     try:
                         card = create_pr_card(pr, self.settings)
                         frame.content_layout.addWidget(card)
@@ -1393,8 +1373,6 @@ class PRWatcherUI(QMainWindow):
                     
         except Exception as e:
             print(f"Error updating section: {e}")
-            # Try to recreate the section's widgets
-            frame.create_scroll_area()
 
     def show_settings(self):
         """Show settings dialog"""
@@ -1418,21 +1396,6 @@ class PRWatcherUI(QMainWindow):
                 save_settings(settings)
                 self.settings = settings  # Update settings in memory
                 
-                # Check if users have changed
-                old_users = set(current_settings.get('users', []))
-                new_users = set(settings.get('users', []))
-                users_changed = old_users != new_users
-                
-                if users_changed:
-                    print("\nDebug - Users changed:")
-                    print(f"  Old users: {sorted(old_users)}")
-                    print(f"  New users: {sorted(new_users)}")
-                    print(f"  Added: {sorted(new_users - old_users)}")
-                    print(f"  Removed: {sorted(old_users - new_users)}")
-                    print("Debug - Triggering immediate refresh for user changes...")
-                    self.refresh_data()
-                    return  # Skip other checks since we're doing a full refresh
-                
                 # Compare refresh settings
                 old_refresh = current_settings.get('refresh', {})
                 new_refresh = settings.get('refresh', {})
@@ -1441,11 +1404,16 @@ class PRWatcherUI(QMainWindow):
                     print("\nDebug - Refresh settings changed:")
                     print(f"  Old: {old_refresh.get('value')} {old_refresh.get('unit')}")
                     print(f"  New: {new_refresh.get('value')} {new_refresh.get('unit')}")
+                    # Stop current timer
+                    if hasattr(self, 'auto_refresh_timer'):
+                        self.auto_refresh_timer.stop()
+                    # Setup new timer with new settings
                     self.setup_refresh_timer(new_refresh)
                 
-                # Compare cache settings
-                if settings.get('cache') != current_settings.get('cache', {}):
-                    print("\nDebug - Cache settings changed, triggering refresh...")
+                # Compare users and cache settings
+                if (settings.get('users') != current_settings.get('users', []) or 
+                    settings.get('cache') != current_settings.get('cache', {})):
+                    print("\nDebug - Users or cache settings changed, triggering immediate refresh...")
                     self.refresh_data()
                 else:
                     # Even if only thresholds changed, update the UI to reflect new colors/badges
@@ -1510,6 +1478,21 @@ class PRWatcherUI(QMainWindow):
         self.spinner_label.setProperty("rotation", self.spinner_rotation)
         self.spinner_label.style().unpolish(self.spinner_label)
         self.spinner_label.style().polish(self.spinner_label)
+
+    def toggle_drafts_visibility(self):
+        """Toggle visibility of draft PRs without refreshing"""
+        # Update toggle button text
+        show_drafts = self.show_drafts_toggle.isChecked()
+        self.show_drafts_toggle.setText("Hide Drafts" if show_drafts else "Show Drafts")
+        
+        # Re-render all sections with current data
+        for frame in [
+            self.open_prs_frame,
+            self.needs_review_frame,
+            self.changes_requested_frame,
+            self.recently_closed_frame
+        ]:
+            self._update_section(frame, frame.prs)
 
 
 def open_ui(open_prs_by_user, prs_awaiting_review_by_user,
