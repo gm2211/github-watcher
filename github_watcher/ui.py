@@ -1084,6 +1084,15 @@ class PRWatcherUI(QMainWindow):
         self.show_drafts_toggle.stateChanged.connect(self.toggle_drafts_visibility)
         left_layout.addWidget(self.show_drafts_toggle)
         
+        # Group by user toggle
+        self.group_by_user_toggle = QCheckBox("Group by User")
+        self.group_by_user_toggle.setChecked(False)  # Don't group by default
+        self.group_by_user_toggle.setStyleSheet(self.show_drafts_toggle.styleSheet())  # Reuse style
+        self.group_by_user_toggle.stateChanged.connect(self.toggle_user_grouping)
+        left_layout.addWidget(self.group_by_user_toggle)
+        
+        left_layout.addStretch()  # Push checkboxes to the left
+        
         # Create section frames (remove draft section)
         self.needs_review_frame = SectionFrame("Needs Review")
         self.changes_requested_frame = SectionFrame("Changes Requested")
@@ -1384,18 +1393,61 @@ class PRWatcherUI(QMainWindow):
             if not frame.is_expanded:
                 frame.toggle_content()
             
-            # Add PR cards for filtered PRs
-            for user, user_prs in filtered_prs.items():
-                for pr in user_prs:
-                    try:
-                        card = create_pr_card(pr, self.settings)
-                        frame.content_layout.addWidget(card)
-                    except Exception as e:
-                        print(f"Warning: Error creating PR card: {e}")
-                        continue
+            # Add PR cards based on grouping preference
+            if self.group_by_user_toggle.isChecked():
+                # Group by user
+                for user, user_prs in filtered_prs.items():
+                    # Add user header
+                    user_header = QLabel(f"@{user}")
+                    user_header.setStyleSheet("""
+                        QLabel {
+                            color: #8b949e;
+                            font-size: 12px;
+                            font-weight: bold;
+                            padding: 5px 0;
+                        }
+                    """)
+                    frame.content_layout.addWidget(user_header)
                     
+                    # Add user's PR cards
+                    for pr in user_prs:
+                        try:
+                            card = create_pr_card(pr, self.settings)
+                            frame.content_layout.addWidget(card)
+                        except Exception as e:
+                            print(f"Warning: Error creating PR card: {e}")
+                            continue
+                    
+                    # Add spacer after each user group except the last
+                    if user != list(filtered_prs.keys())[-1]:
+                        spacer = QFrame()
+                        spacer.setStyleSheet("background-color: #404040; margin: 10px 0;")
+                        spacer.setFixedHeight(1)
+                        frame.content_layout.addWidget(spacer)
+            else:
+                # Flat list of PRs
+                for user, user_prs in filtered_prs.items():
+                    for pr in user_prs:
+                        try:
+                            card = create_pr_card(pr, self.settings)
+                            frame.content_layout.addWidget(card)
+                        except Exception as e:
+                            print(f"Warning: Error creating PR card: {e}")
+                            continue
+                        
         except Exception as e:
             print(f"Error updating section: {e}")
+
+    def toggle_user_grouping(self):
+        """Toggle user grouping without refreshing"""
+        # Re-render all sections with current data
+        for frame in [
+            self.open_prs_frame,
+            self.needs_review_frame,
+            self.changes_requested_frame,
+            self.recently_closed_frame
+        ]:
+            self._update_section(frame, frame.prs)
 
     def show_settings(self):
         """Show settings dialog"""
