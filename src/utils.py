@@ -1,4 +1,4 @@
-from ui import load_settings
+from src.ui import load_settings
 
 
 def read_users_from_file():

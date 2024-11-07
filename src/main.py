@@ -1,6 +1,6 @@
 import sys
 import os
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 from src.utils import read_users_from_file, get_cached_pr_data_with_github_prs
 from src.ui import open_ui, load_settings
 from src.github_auth import get_github_api_key

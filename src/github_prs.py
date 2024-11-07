@@ -3,11 +3,15 @@ import re
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+import os
+import json
+import time
 
 import requests
 
 from cache import Cache, get_cached_pr_data, cache_pr_data
 from objects import PRState, PullRequest, TimelineEvent, TimelineEventType
+from notifications import notify
 
 DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -567,3 +571,10 @@ class GitHubPRs:
         """Get the date threshold for recently closed PRs"""
         date_threshold = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         return date_threshold
+
+    def notify_new_prs(self, new_prs):
+        """Send notification for new PRs"""
+        if new_prs:
+            title = "New Pull Requests"
+            message = f"{len(new_prs)} new PR(s) to review"
+            notify(title, message)

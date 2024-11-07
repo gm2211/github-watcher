@@ -11,7 +11,7 @@ import webbrowser
 from datetime import datetime, timezone, timedelta
 import platform
 import os
-from notifications import notify, NOTIFIER_APP
+from notifications import notify
 import yaml
 import time
 from github_auth import get_github_api_key
@@ -778,52 +778,12 @@ class SettingsDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to clear cache: {str(e)}")
 
-
-def load_settings():
-    settings_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.yaml')
-    
-    if not os.path.exists(settings_file):
-        # Default settings
-        settings = {
-            'users': [],
-            'refresh': {
-                'value': 10,
-                'unit': 'seconds'
-            },
-            'cache': {
-                'value': 1,
-                'unit': 'hours'
-            },
-            'thresholds': {
-                'files': {
-                    'warning': 10,
-                    'danger': 50
-                },
-                'lines': {
-                    'warning': 500,
-                    'danger': 1000
-                }
-            }
-        }
-        
-        save_settings(settings)
-        return settings
-    
-    try:
-        with open(settings_file, 'r') as f:
-            return yaml.safe_load(f)
-    except Exception as e:
-        print(f"Error loading settings: {e}")
-        return {}
-
-
-def save_settings(settings):
-    settings_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.yaml')
-    try:
-        with open(settings_file, 'w') as f:
-            yaml.dump(settings, f)
-    except Exception as e:
-        print(f"Error saving settings: {e}")
+    def test_notification(self):
+        """Send a test notification"""
+        notify(
+            "Test Notification",
+            "This is a test notification from GitHub PR Watcher"
+        )
 
 
 class LoadingOverlay(QWidget):
@@ -1262,7 +1222,7 @@ class PRWatcherUI(QMainWindow):
         self.loading_sections = {}
     
     def show_test_notification(self):
-        notify(NOTIFIER_APP, "GitHub PR Watcher", "Test notification - System is working!")
+        notify("GitHub PR Watcher", "Test notification - System is working!")
 
     def refresh_data(self):
         if self.refresh_worker and self.refresh_worker.isRunning():
@@ -1393,8 +1353,7 @@ class PRWatcherUI(QMainWindow):
                         closed_details.append(f"#{pr_num} - {pr.title}\nRepo: {repo}\nAuthor: {author}")
                 
                 if closed_details:
-                    notify(NOTIFIER_APP, "PRs Closed", 
-                          "Recently closed PRs:\n" + "\n\n".join(closed_details))
+                    notify("GitHub PR Watcher", "Recently closed PRs:\n" + "\n\n".join(closed_details))
             
             # Update tracking sets after notifications
             self.previously_open_prs = current_open_prs.copy()
@@ -1848,3 +1807,23 @@ def create_changes_badge(additions, deletions, settings):
     layout.addWidget(deletions_label)
     
     return changes_badge
+
+def load_settings():
+    """Load settings from YAML file"""
+    settings_file = os.path.expanduser('~/.github-pr-watcher.yml')
+    if os.path.exists(settings_file):
+        try:
+            with open(settings_file, 'r') as f:
+                return yaml.safe_load(f) or {}
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+    return {}
+
+def save_settings(settings):
+    """Save settings to YAML file"""
+    settings_file = os.path.expanduser('~/.github-pr-watcher.yml')
+    try:
+        with open(settings_file, 'w') as f:
+            yaml.dump(settings, f)
+    except Exception as e:
+        print(f"Error saving settings: {e}")

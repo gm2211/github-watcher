@@ -1,47 +1,27 @@
-import logging
+from PyQt6.QtWidgets import QSystemTrayIcon
+from PyQt6.QtGui import QIcon
 import os
-import platform
-import sys
-import atexit
-import time
-from PyQt6.QtCore import QProcess
 
-NOTIFIER_APP = "gh_notify"
-
-
-def tell_app(app: str, command: str):
-    process = QProcess()
-    process.start("osascript", ["-e", f'tell application "{app}" to {command}'])
-    process.waitForFinished()
-
-
-def notify(notifier_app: str, title: str, message: str):
-    # Start the app hidden
-    process = QProcess()
-    process.start("osascript", [
-        "-e", f'tell application "{notifier_app}" to run',
-        "-e", f'tell application "{notifier_app}" to set visible to false'
-    ])
-    process.waitForFinished()
-    # Send notification
-    tell_app(notifier_app, f'notify("{title}", "{message}")')
-    # Kill the app after sending notification
-    kill_notifier()
-
-
-def kill_notifier():
-    print("Killing notifier..")
-    tell_app(NOTIFIER_APP, 'quit')
-
-
-# Always register the kill_notifier function to run when the script exits
-atexit.register(kill_notifier)
-
-# Example usage
-if __name__ == "__main__":
-    is_macos = platform.system() == 'Darwin'
-    if not is_macos:
-        logging.warning("Notifications are only supported on macOS.")
-        sys.exit(-1)
-
-    notify(NOTIFIER_APP, "Test", "This is a test notification")
+def notify(title, message):
+    """Send a system notification"""
+    tray = QSystemTrayIcon()
+    
+    # Create a simple default icon if none exists
+    icon = QIcon()
+    if not icon.isNull():
+        tray.setIcon(icon)
+    else:
+        # Create a 1x1 pixel icon as fallback
+        from PyQt6.QtGui import QPixmap
+        px = QPixmap(1, 1)
+        px.fill()  # Fills with black by default
+        tray.setIcon(QIcon(px))
+    
+    tray.show()  # Need to show before we can send message
+    tray.showMessage(
+        title,
+        message,
+        QSystemTrayIcon.MessageIcon.Information,
+        3000  # Display for 3 seconds
+    )
+    tray.hide()  # Hide after sending
