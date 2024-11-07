@@ -1,9 +1,10 @@
+build/
 __pycache__
 dist/
 .DS_Store
 .idea
 .cache
+.eggs
 users.txt
 run.env
-# Settings file
 settings.yaml

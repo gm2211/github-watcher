@@ -1,27 +1,51 @@
-from utils import read_users_from_file, get_cached_pr_data_with_github_prs
-from ui import open_ui, load_settings
-from github_auth import get_github_api_key
-from github_prs import GitHubPRs
-from datetime import timedelta
-from PyQt6.QtWidgets import QApplication
 import sys
+import os
+from PyQt6.QtWidgets import QApplication
+from src.utils import read_users_from_file, get_cached_pr_data_with_github_prs
+from src.ui import open_ui, load_settings
+from src.github_auth import get_github_api_key
+from src.github_prs import GitHubPRs
+from datetime import timedelta
 
+VERSION = "1.0.0"
+
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    elif 'Contents/Resources' in os.path.abspath(__file__):
+        # Running from app bundle
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    else:
+        base_path = os.path.abspath(os.path.dirname(__file__))
+    
+    return os.path.join(base_path, relative_path)
 
 def main():
+    # Add version flag support
+    if len(sys.argv) > 1 and sys.argv[1] in ['--version', '-v']:
+        print(f"GitHub PR Watcher v{VERSION}")
+        return 0
+
     # Create QApplication instance
     app = QApplication(sys.argv)
+    app.setApplicationName("GitHub PR Watcher")
+    app.setApplicationVersion(VERSION)
     
-    # Ensure settings exist
-    settings = load_settings()  # This will create default settings if missing
+    # Set app icon
+    if os.path.exists(get_resource_path("resources/AppIcon.icns")):
+        from PyQt6.QtGui import QIcon
+        app.setWindowIcon(QIcon(get_resource_path("resources/AppIcon.icns")))
+    
+    settings = load_settings()
     
     users = read_users_from_file()
     if not users:
-        # Still open the UI even with no users - they can add them in settings
         window = open_ui({}, {}, {}, {})
         return app.exec()
 
     try:
-        # Create GitHubPRs instance
         github_token = get_github_api_key()
         cache_duration = settings.get('cache_duration', 1)
         github_prs = GitHubPRs(
@@ -32,7 +56,6 @@ def main():
         )
 
         print("\nDebug - Loading initial data...")
-        # Try cache first
         initial_data = github_prs.get_pr_data(users, force_refresh=False)
         
         if not initial_data:
@@ -43,7 +66,6 @@ def main():
             print("Debug - No data available, using empty state")
             initial_data = ({}, {}, {}, {})
 
-        # Open UI with initial data
         window = open_ui(
             *initial_data,
             github_prs=github_prs,
@@ -55,10 +77,8 @@ def main():
     except Exception as e:
         print(f"Error fetching PR data: {e}")
         print("Please check your GitHub token and internet connection.")
-        # Still open UI so they can configure settings
         window = open_ui({}, {}, {}, {})
         return app.exec()
-
 
 if __name__ == "__main__":
     sys.exit(main())
