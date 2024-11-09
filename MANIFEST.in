@@ -1,0 +1,1 @@
+recursive-include github_watcher/gh_notify.app * 

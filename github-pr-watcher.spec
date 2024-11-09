@@ -8,19 +8,23 @@ a = Analysis(
     binaries=[],
     datas=[('src/resources', 'resources')],
     hiddenimports=[
-        'PyQt6',
+        'requests',
+        'yaml',
+        'xxhash',
         'PyQt6.QtCore',
         'PyQt6.QtGui',
         'PyQt6.QtWidgets',
-        'src.utils',
-        'src.ui',
-        'src.github_auth',
-        'src.github_prs',
-        'yaml',
-        'xxhash'
     ],
     hookspath=[],
-    hooksconfig={},
+    hooksconfig={
+        'PyQt6': {
+            'modules': [
+                'QtCore',
+                'QtGui',
+                'QtWidgets'
+            ]
+        }
+    },
     runtime_hooks=[],
     excludes=[],
     win_no_prefer_redirects=False,
@@ -40,8 +44,8 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    console=False,
+    upx=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=True,
     target_arch='arm64',
@@ -56,7 +60,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='github-pr-watcher'
 )

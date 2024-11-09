@@ -13,6 +13,3 @@ poetry install
 
 echo "🔨 Building executable..."
 poetry run pyinstaller github-pr-watcher.spec
-
-echo "🚀 Running executable..."
-./dist/github-pr-watcher
