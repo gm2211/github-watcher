@@ -9,6 +9,9 @@ jobs:
     name: Build distribution 📦
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: write  # Needed for auto-commit action
+    
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
@@ -28,12 +31,10 @@ jobs:
         poetry version $VERSION
         
     - name: Commit version update
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add pyproject.toml
-        git commit -m "Bump version to $VERSION"
-        git push
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "Bump version to ${{ github.ref_name }}"
+        file_pattern: 'pyproject.toml'
         
     - name: Build a binary wheel and a source tarball
       run: poetry build
@@ -69,8 +70,7 @@ jobs:
 
   github-release:
     name: >-
-      Sign the Python 🐍 distribution 📦 with Sigstore
-      and upload them to GitHub Release
+      Sign with Sigstore and upload to GitHub Release
     needs:
     - publish-to-pypi
     runs-on: ubuntu-latest
