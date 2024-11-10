@@ -8,7 +8,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
-@dataclass
+@dataclass(order=True)
 class Version:
     major: int
     minor: int
