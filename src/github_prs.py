@@ -3,15 +3,12 @@ import re
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-import os
-import json
-import time
 
 import requests
 
-from cache import Cache, get_cached_pr_data, cache_pr_data
-from objects import PRState, PullRequest, TimelineEvent, TimelineEventType
-from notifications import notify
+from src.cache import Cache, get_cached_pr_data, cache_pr_data
+from src.objects import PRState, PullRequest, TimelineEvent, TimelineEventType
+from src.notifications import notify
 
 DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 

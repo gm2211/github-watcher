@@ -1,9 +1,8 @@
 import os
 import json
 import xxhash
-import shutil
 from datetime import datetime, timedelta
-from objects import TimelineEventType, PullRequest  # Import both classes
+from src.objects import TimelineEventType, PullRequest  # Import both classes
 
 
 class Cache:

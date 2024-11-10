@@ -1,6 +1,5 @@
 from PyQt6.QtWidgets import QSystemTrayIcon
 from PyQt6.QtGui import QIcon
-import os
 
 def notify(title, message):
     """Send a system notification"""

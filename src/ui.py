@@ -1,22 +1,20 @@
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QScrollArea, QSizePolicy, QDialog,
-    QLineEdit, QSpinBox, QFormLayout, QTextEdit, QGroupBox, QComboBox,
-    QTabWidget, QDialogButtonBox, QPlainTextEdit, QMessageBox, QCheckBox,
+    QSpinBox, QFormLayout, QTextEdit, QGroupBox, QComboBox,
+    QTabWidget, QDialogButtonBox, QMessageBox, QCheckBox,
     QListView
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QIcon, QFont, QTransform, QPixmap, QPainter, QColor, QFontMetrics
+from PyQt6.QtGui import QFont
 import webbrowser
 from datetime import datetime, timezone, timedelta
-import platform
 import os
-from notifications import notify
+from src.notifications import notify
 import yaml
-import time
-from github_auth import get_github_api_key
-from github_prs import GitHubPRs
-from objects import TimelineEventType
+from src.github_auth import get_github_api_key
+from src.github_prs import GitHubPRs
+from src.objects import TimelineEventType
 import shutil
 
 

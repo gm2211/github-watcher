@@ -1,13 +1,13 @@
 [tool.poetry]
 name = "github-pr-watcher"
-version = "1.0.0"
+version = "1.0.6"
 description = "Desktop application to monitor GitHub Pull Requests"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["gm2211 <gmecocci@outlook.com>"]
 readme = "README.md"
 packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.11,<3.12"
+python = "^3.11,<3.13"
 PyQt6 = "^6.6.0"
 requests = "^2.31.0"
 PyYAML = "^6.0.1"
@@ -19,7 +19,7 @@ pyinstaller = "^6.0.0"
 
 [tool.poetry.scripts]
 github-pr-watcher = "src.main:main"
-create-icon = "scripts.create_icon:create_icon"
+gpw = "src.main:main"
 
 [build-system]
 requires = ["poetry-core"]
