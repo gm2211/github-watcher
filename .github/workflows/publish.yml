@@ -1,4 +1,4 @@
-name: Publish Python 🐍 distribution 📦 to PyPI
+name: Publish to PyPI
 
 on:
   release:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    name: Build distribution 📦
+    name: Checkout files
     runs-on: ubuntu-latest
     
     permissions:
@@ -27,7 +27,15 @@ jobs:
     - name: Install Poetry
       run: |
         curl -sSL https://install.python-poetry.org | python3 -
+  bump-version:
+    name: Bump version
+    runs-on: ubuntu-latest
     
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
     - name: Update version in pyproject.toml
       run: |
         VERSION=$(echo $GITHUB_REF | sed -e 's,.*/\(.*\),\1,' -e 's/^v//')
@@ -64,10 +72,9 @@ jobs:
         path: dist/
 
   publish-to-pypi:
-    name: >-
-      Publish Python 🐍 distribution 📦 to PyPI
+    name: Publish to PyPi
     needs:
-    - build
+    - bump-version
     runs-on: ubuntu-latest
     
     environment:
@@ -87,8 +94,7 @@ jobs:
       uses: pypa/gh-action-pypi-publish@release/v1
 
   github-release:
-    name: >-
-      Sign with Sigstore and upload to GitHub Release
+    name: Sign with Sigstore and upload to GitHub Release
     needs:
     - publish-to-pypi
     runs-on: ubuntu-latest
