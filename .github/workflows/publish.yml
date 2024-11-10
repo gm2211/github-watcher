@@ -22,7 +22,9 @@ jobs:
     
     - name: Update version in pyproject.toml
       run: |
-        VERSION=${GITHUB_REF#refs/tags/v}
+        # Extract version from tag (e.g., from refs/tags/v1.1.0 or refs/tags/1.1.0)
+        VERSION=$(echo $GITHUB_REF | sed -e 's,.*/\(.*\),\1,' -e 's/^v//')
+        echo "Setting version to: $VERSION"
         poetry version $VERSION
         
     - name: Commit version update
@@ -30,7 +32,7 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add pyproject.toml
-        git commit -m "Bump version to ${GITHUB_REF#refs/tags/v}"
+        git commit -m "Bump version to $VERSION"
         git push
         
     - name: Build a binary wheel and a source tarball
@@ -92,10 +94,7 @@ jobs:
     - name: Upload artifact signatures to GitHub Release
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      # Upload to GitHub Release using the `gh` CLI.
-      # `dist/` contains the built packages and the
-      # sigstore-produced signatures and certificates.
       run: >-
         gh release upload
         '${{ github.ref_name }}' dist/**
-        --repo '${{ github.repository }}' 
+        --repo '${{ github.repository }}'
