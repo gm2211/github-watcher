@@ -10,13 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     
     permissions:
-      contents: write  # Needed for auto-commit action
+      contents: write
+      pull-requests: write
     
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: main  # Explicitly checkout main branch
-        fetch-depth: 0  # Fetch all history for proper version tracking
+        ref: main
+        fetch-depth: 0
     
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -29,18 +30,29 @@ jobs:
     
     - name: Update version in pyproject.toml
       run: |
-        # Extract version from tag (e.g., from refs/tags/v1.1.0 or refs/tags/1.1.0)
         VERSION=$(echo $GITHUB_REF | sed -e 's,.*/\(.*\),\1,' -e 's/^v//')
         echo "Setting version to: $VERSION"
         poetry version $VERSION
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
         
-    - name: Commit version update
-      uses: stefanzweifel/git-auto-commit-action@v5
+    - name: Create Pull Request
+      uses: peter-evans/create-pull-request@v5
       with:
-        commit_message: "Bump version to ${{ github.ref_name }}"
-        file_pattern: 'pyproject.toml'
-        branch: main  # Explicitly specify the branch
-        create_branch: false
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: "Bump version to ${{ env.VERSION }}"
+        title: "Bump version to ${{ env.VERSION }}"
+        body: |
+          Automated version bump triggered by release ${{ github.ref_name }}
+        branch: "version-bump/${{ env.VERSION }}"
+        base: main
+        delete-branch: true
+        
+    - name: Enable Pull Request Automerge
+      run: |
+        PR_NUMBER=$(gh pr list --json number,headRefName --jq '.[] | select(.headRefName=="version-bump/${{ env.VERSION }}") | .number')
+        gh pr merge $PR_NUMBER --auto --merge
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
     - name: Build a binary wheel and a source tarball
       run: poetry build
@@ -63,7 +75,7 @@ jobs:
       url: https://pypi.org/p/github-pr-watcher
     
     permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
+      id-token: write
     
     steps:
     - name: Download all the dists
@@ -82,8 +94,8 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write  # IMPORTANT: mandatory for making GitHub Releases
-      id-token: write  # IMPORTANT: mandatory for sigstore
+      contents: write
+      id-token: write
 
     steps:
     - name: Download all the dists
