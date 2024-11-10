@@ -153,8 +153,8 @@ def create_release(token, version, prerelease=False, draft=False):
     data = {
         "tag_name": f"v{version}",
         "target_commitish": "main",
-        "name": f"Release v{version}",
-        "body": f"Release version {version}",
+        "name": f"{version}",
+        "body": f"Release version: {version}",
         "draft": draft,
         "prerelease": prerelease
     }
@@ -165,7 +165,7 @@ def create_release(token, version, prerelease=False, draft=False):
     response = requests.post(url, headers=headers, json=data)
     
     if response.status_code == 201:
-        print(f"Successfully created release v{version}")
+        print(f"Successfully released version {version}")
         print(f"Release URL: {response.json()['html_url']}")
     else:
         print(f"Error creating release: {response.status_code}")
@@ -212,8 +212,8 @@ def main():
         new_version = current_version.bump_minor()
 
     # Confirm with user
-    print(f"\nAbout to create release v{new_version}")
-    print(f"Previous version: v{current_version}")
+    print(f"\nAbout to release version: {new_version}")
+    print(f"Previous version: {current_version}")
     if args.prerelease:
         print("This will be marked as a prerelease")
     if args.draft:
