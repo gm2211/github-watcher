@@ -6,11 +6,3 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 A desktop tool to monitor GitHub Pull Requests with native notifications.
-
-## Development
-
-Requirements:
-- Python 3.11
-- Poetry
-
-Setup:
