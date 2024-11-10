@@ -5,10 +5,9 @@ on:
     types: [created]
 
 jobs:
-  build-and-bump-version:
-    name: Checkout files and bump version
+  bump-version:
+    name: Bump version in pyproject.toml
     runs-on: ubuntu-latest
-    
     permissions:
       contents: write
       pull-requests: write
@@ -19,26 +18,18 @@ jobs:
         ref: main
         fetch-depth: 0
     
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-    
-    - name: Install Poetry
-      run: |
-        curl -sSL https://install.python-poetry.org | python3 -
-
     - name: Update version in pyproject.toml
       run: |
         VERSION=$(echo $GITHUB_REF | sed -e 's,.*/\(.*\),\1,' -e 's/^v//')
         echo "Setting version to: $VERSION"
-        poetry version $VERSION
         echo "VERSION=$VERSION" >> $GITHUB_ENV
+        sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
         
     - name: Create Pull Request
+      id: cpr
       uses: peter-evans/create-pull-request@v5
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ github.token }}
         commit-message: "Bump version to ${{ env.VERSION }}"
         title: "Bump version to ${{ env.VERSION }}"
         body: |
@@ -47,67 +38,68 @@ jobs:
         base: main
         delete-branch: true
         
-    - name: Enable Pull Request Automerge
+    - name: Enable and wait for PR merge
+      if: steps.cpr.outputs.pull-request-number
       run: |
-        PR_NUMBER=$(gh pr list --json number,headRefName --jq '.[] | select(.headRefName=="version-bump/${{ env.VERSION }}") | .number')
+        PR_NUMBER="${{ steps.cpr.outputs.pull-request-number }}"
         gh pr merge $PR_NUMBER --auto --merge
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
-    - name: Build a binary wheel and a source tarball
-      run: poetry build
-      
-    - name: Store the distribution packages
-      uses: actions/upload-artifact@v4
-      with:
-        name: python-package-distributions
-        path: dist/
+        # Wait for PR to be merged
+        while true; do
+          STATUS=$(gh pr view $PR_NUMBER --json state -q .state)
+          if [ "$STATUS" = "MERGED" ]; then
+            echo "PR merged successfully"
+            break
+          elif [ "$STATUS" = "CLOSED" ]; then
+            echo "PR was closed without merging"
+            exit 1
+          fi
+          echo "Waiting for PR to be merged..."
+          sleep 10
+        done
+        
+        # Checkout the updated main branch
+        git pull origin main
+      env:
+        GH_TOKEN: ${{ github.token }}
 
-  publish-to-pypi:
-    name: Publish to PyPi
-    needs:
-    - build-and-bump-version
+  build-and-publish:
+    needs: bump-version
     runs-on: ubuntu-latest
-    
-    environment:
-      name: pypi
-      url: https://pypi.org/p/github-pr-watcher
-    
-    permissions:
-      id-token: write
-    
-    steps:
-    - name: Download all the dists
-      uses: actions/download-artifact@v4
-      with:
-        name: python-package-distributions
-        path: dist/
-    - name: Publish distribution 📦 to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-
-  github-release:
-    name: Sign with Sigstore and upload to GitHub Release
-    needs:
-    - publish-to-pypi
-    runs-on: ubuntu-latest
-
     permissions:
       contents: write
       id-token: write
-
+    
     steps:
-    - name: Download all the dists
-      uses: actions/download-artifact@v4
+    - uses: actions/checkout@v4
       with:
-        name: python-package-distributions
-        path: dist/
+        ref: main  # Get the latest main with updated version
+        
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    
+    - name: Install Poetry
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+        
+    - name: Build package
+      run: poetry build
+      
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        packages-dir: dist/
+        
     - name: Sign the dists with Sigstore
       uses: sigstore/gh-action-sigstore-python@v3.0.0
       with:
         inputs: >-
           ./dist/*.tar.gz
           ./dist/*.whl
-    - name: Upload artifact signatures to GitHub Release
+          
+    - name: Upload to GitHub Release
       env:
         GITHUB_TOKEN: ${{ github.token }}
       run: >-
