@@ -1,11 +1,13 @@
 import sys
 import os
 from PyQt6.QtWidgets import QApplication, QMessageBox
-from src.utils import read_users_from_file, get_cached_pr_data_with_github_prs
-from src.ui import open_ui, load_settings
+from src.ui import open_ui
 from src.github_auth import get_github_api_key
 from src.github_prs import GitHubPRs
 from datetime import timedelta
+from PyQt6.QtCore import QTimer
+from src.state import UIState
+from src.settings import get_settings
 
 VERSION = "1.0.0"
 
@@ -41,35 +43,32 @@ def main():
 
         app.setWindowIcon(QIcon(get_resource_path("resources/AppIcon.icns")))
 
-    settings = load_settings()
-
-    users = read_users_from_file()
+    settings = get_settings()
+    users = settings.get("users", [])
     if not users:
         window = open_ui({}, {}, {}, {})
         return app.exec()
 
     try:
         github_token = get_github_api_key()
-        cache_duration = settings.get("cache_duration", 1)
         github_prs = GitHubPRs(
             github_token,
             recency_threshold=timedelta(days=1),
-            cache_dir=".cache",
-            cache_ttl=timedelta(hours=cache_duration),
         )
 
-        print("\nDebug - Loading initial data...")
-        initial_data = github_prs.get_pr_data(users, force_refresh=False)
+        # Load UI state
+        ui_state = UIState()
+        initial_data = (
+            ui_state.get_pr_data("open")[0],
+            ui_state.get_pr_data("review")[0],
+            ui_state.get_pr_data("attention")[0],
+            ui_state.get_pr_data("closed")[0]
+        )
 
-        if not initial_data:
-            print("Debug - No cached data, fetching fresh data...")
-            initial_data = github_prs.get_pr_data(users, force_refresh=True)
-
-        if not initial_data:
-            print("Debug - No data available, using empty state")
-            initial_data = ({}, {}, {}, {})
-
-        window = open_ui(*initial_data, github_prs=github_prs, settings=settings)
+        window = open_ui(*initial_data, github_prs=github_prs, settings=settings.all)
+        
+        # Schedule immediate refresh
+        QTimer.singleShot(0, window.refresh_data)
 
         return app.exec()
 
