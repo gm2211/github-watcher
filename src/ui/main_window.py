@@ -176,23 +176,41 @@ class PRWatcherUI(QMainWindow):
             traceback.print_exc()  # Print full stack trace for debugging
             QMessageBox.critical(self, "Error", f"Failed to apply settings: {str(e)}")
 
-    def apply_filters(self):
-        """Apply all current filters to the UI"""
+    def apply_filters(self, open_prs=None, needs_review=None, needs_attention=None, recently_closed=None):
+        """Apply filters to PR lists"""
         print("\nDebug - Applying filters")
         try:
-            filter_state = self.filters.get_filter_state()
+            filter_state = self.filters.filtersState  # Use the property directly
             print(f"Debug - Filter state: {filter_state}")
 
-            # Update each section
-            for frame in [
-                self.open_prs_frame,
-                self.needs_review_frame,
-                self.changes_requested_frame,
-                self.recently_closed_frame,
-            ]:
-                self._update_section(frame, frame.prs, filter_state)
+            # Update each section with filtered data
+            sections = [
+                ("Open PRs", self.open_prs_frame, open_prs),
+                ("Needs Review", self.needs_review_frame, needs_review),
+                ("Changes Requested", self.changes_requested_frame, needs_attention),
+                ("Recently Closed", self.recently_closed_frame, recently_closed)
+            ]
+
+            for title, frame, data in sections:
+                print(f"\nDebug - Updating section: {title}")
+                if data is not None:
+                    self._update_section(frame, data, filter_state)  # Pass filter_state here
         except Exception as e:
             print(f"Error applying filters: {e}")
+            traceback.print_exc()
+
+    def _filter_prs(self, pr_data, filter_state):
+        """Filter PRs based on the filter state"""
+        filtered_prs = []
+        for user, prs in pr_data.items():
+            if "All Authors" not in filter_state["selected_users"] and user not in filter_state["selected_users"]:
+                continue
+            for pr in prs:
+                # Apply draft filter
+                if not filter_state["show_drafts"] and getattr(pr, "draft", False):
+                    continue
+                filtered_prs.append(pr)
+        return filtered_prs
 
     def _update_section(self, frame, pr_data, filter_state):
         """Update a section with filtered PR data"""
@@ -264,25 +282,45 @@ class PRWatcherUI(QMainWindow):
 
     def update_pr_lists(
         self,
-        open_prs_by_user,
-        prs_awaiting_review_by_user,
-        prs_that_need_attention_by_user,
-        user_recently_closed_prs_by_user,
+        open_prs_by_user=None,
+        prs_awaiting_review_by_user=None,
+        prs_that_need_attention_by_user=None,
+        user_recently_closed_prs_by_user=None,
     ):
-        """Update all PR lists in the UI"""
+        """Update all PR lists"""
         print("\nDebug - Updating PR lists")
+
+        # Apply filters
+        self.apply_filters(
+            open_prs_by_user,
+            prs_awaiting_review_by_user,
+            prs_that_need_attention_by_user,
+            user_recently_closed_prs_by_user,
+        )
+
+        # Save UI state after updating lists
         try:
-            # Store PR data in frames
-            self.open_prs_frame.prs = open_prs_by_user
-            self.needs_review_frame.prs = prs_awaiting_review_by_user
-            self.changes_requested_frame.prs = prs_that_need_attention_by_user
-            self.recently_closed_frame.prs = user_recently_closed_prs_by_user
-
-            # Apply current filters
-            self.apply_filters()
-
+            from src.state import UIState
+            state = UIState()
+            print("\nDebug - Saving UI state after updating lists")
+            
+            for section in [
+                ("Needs Review", self.needs_review_frame),
+                ("Changes Requested", self.changes_requested_frame),
+                ("Open PRs", self.open_prs_frame),
+                ("Recently Closed", self.recently_closed_frame)
+            ]:
+                title, frame = section
+                key = f"section_{title}_expanded"
+                state.state[key] = frame.is_expanded
+                print(f"Debug - Saving {key}={frame.is_expanded}")
+            
+            state.save()
+            print("Debug - UI state saved successfully")
+            
         except Exception as e:
-            print(f"Error updating PR lists: {e}")
+            print(f"Error saving UI state: {e}")
+            traceback.print_exc()
 
     def _show_loading_state(self):
         """Show loading state in UI"""
@@ -313,12 +351,30 @@ class PRWatcherUI(QMainWindow):
         print("\nDebug - Refresh complete")
         try:
             self._hide_loading_state()
+            
+            # Save PR data to state
+            from src.state import UIState
+            state = UIState()
+            
+            # Unpack data tuple
+            open_prs, needs_review, changes_requested, recently_closed = data
+            
+            # Save each section's data
+            state.update_pr_data('open', open_prs)
+            state.update_pr_data('review', needs_review)
+            state.update_pr_data('attention', changes_requested)
+            state.update_pr_data('closed', recently_closed)
+            
+            # Update UI
             self.update_pr_lists(*data)
+            
             if self.refresh_worker in self.workers:
                 self.workers.remove(self.refresh_worker)
             self.refresh_worker = None
+            
         except Exception as e:
             print(f"Error handling refresh completion: {e}")
+            traceback.print_exc()
 
     def _handle_refresh_error(self, error_msg):
         """Handle refresh operation error"""
@@ -395,6 +451,35 @@ class PRWatcherUI(QMainWindow):
 
         except Exception as e:
             print(f"Error updating refresh timer: {e}")
+
+    def refresh_complete(self):
+        """Handle refresh completion"""
+        print("\nDebug - Refresh complete")
+        self.hide_loading()
+        self.update_pr_lists()
+
+        # Save UI state after refresh
+        try:
+            from src.state import UIState
+            state = UIState()
+            for section in [
+                ("Needs Review", self.needs_review_frame),
+                ("Changes Requested", self.changes_requested_frame),
+                ("Open PRs", self.open_prs_frame),
+                ("Recently Closed", self.recently_closed_frame)
+            ]:
+                title, frame = section
+                key = f"section_{title}_expanded"
+                state.state[key] = frame.is_expanded
+            
+            print("\nDebug - Saving UI state after refresh")
+            print(f"Debug - State before save: {state.state}")
+            state.save()
+            print("Debug - UI state saved successfully")
+            
+        except Exception as e:
+            print(f"Error saving UI state: {e}")
+            traceback.print_exc()
 
 def open_ui(
     open_prs_by_user,

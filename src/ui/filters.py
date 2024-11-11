@@ -9,9 +9,18 @@ class FiltersBar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.show_drafts = True
-        self.group_by_user = False
-        
+        self.filtersState = {
+            "show_drafts": True,
+            "group_by_user": False,
+            "selected_users": {"All Authors"}
+        }
+        self._setup_ui()
+
+    def get_state(self):
+        """Get current filter state"""
+        return self.filtersState
+
+    def _setup_ui(self):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
@@ -49,11 +58,15 @@ class FiltersBar(QWidget):
         layout.addStretch()
 
     def _on_drafts_toggled(self):
-        self.show_drafts = self.show_drafts_toggle.isChecked()
-        self.filtersChanged.emit()
+        self.filtersState["show_drafts"] = self.show_drafts_toggle.isChecked()
+        self._update_filter_state()
 
     def _on_grouping_toggled(self):
-        self.group_by_user = self.group_by_user_toggle.isChecked()
+        self.filtersState["group_by_user"] = self.group_by_user_toggle.isChecked()
+        self._update_filter_state()
+
+    def _update_filter_state(self):
+        self.filtersState["selected_users"] = set(self.user_filter.currentData())
         self.filtersChanged.emit()
 
     def get_filter_state(self):
@@ -61,8 +74,8 @@ class FiltersBar(QWidget):
         selected_users = self.user_filter.getSelectedItems()
         print(f"Debug - Selected users: {selected_users}")
         return {
-            'show_drafts': self.show_drafts,
-            'group_by_user': self.group_by_user,
+            'show_drafts': self.filtersState["show_drafts"],
+            'group_by_user': self.filtersState["group_by_user"],
             'selected_users': selected_users
         }
 

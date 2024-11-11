@@ -23,7 +23,14 @@ class SectionFrame(QFrame):
         self.scroll_area = None
         self.content_widget = None
         self.content_layout = None
-        self.is_expanded = True
+        
+        # Load saved state
+        print(f"\nDebug - Loading state for section {title}")
+        from src.state import UIState
+        self.state = UIState()
+        key = f"section_{title}_expanded"
+        self.is_expanded = self.state.state.get(key, True)
+        print(f"Debug - Loaded state: {key}={self.is_expanded}")
 
         # Use theme styles
         self.setStyleSheet(Styles.SECTION_FRAME)
@@ -35,16 +42,35 @@ class SectionFrame(QFrame):
         # Create UI elements
         self.create_header()
         self.create_scroll_area()
+        
+        # Apply saved state
+        if not self.is_expanded:
+            if self.content_widget:
+                self.content_widget.setVisible(False)
+            if self.toggle_button:
+                self.toggle_button.setText("▶")
+            print(f"Debug - Applied collapsed state to {title}")
 
     def create_header(self):
         """Create header section"""
         print(f"\nDebug - Creating header for {self.title}")
+        # Make the entire header clickable
         header_container = QFrame()
         header_container.setFixedHeight(30)
         header_container.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
-        header_container.setStyleSheet("background: transparent;")
+        header_container.setStyleSheet("""
+            QFrame {
+                background: transparent;
+            }
+            QFrame:hover {
+                background: rgba(255, 255, 255, 0.1);
+            }
+        """)
+        header_container.mousePressEvent = lambda _: self.toggle_content()
+        header_container.setCursor(Qt.CursorShape.PointingHandCursor)
+        
         header_layout = QHBoxLayout(header_container)
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(5)
@@ -71,20 +97,15 @@ class SectionFrame(QFrame):
         self.left_layout.addWidget(self.count_label)
 
         # Toggle button
-        self.toggle_button = QLabel("▼")
+        self.toggle_button = QLabel("▼" if self.is_expanded else "▶")
         self.toggle_button.setStyleSheet(f"""
             QLabel {{
                 color: {Colors.TEXT_PRIMARY};
                 padding: 0px 5px;
                 font-size: 12px;
             }}
-            QLabel:hover {{
-                color: {Colors.TEXT_SECONDARY};
-            }}
         """)
         self.toggle_button.setFixedSize(20, 20)
-        self.toggle_button.mousePressEvent = lambda _: self.toggle_content()
-        self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.left_layout.addWidget(self.toggle_button)
         self.left_layout.addStretch()
 
@@ -131,8 +152,26 @@ class SectionFrame(QFrame):
             return
 
         self.is_expanded = not self.is_expanded
-        self.content_widget.setVisible(self.is_expanded)
-        self.toggle_button.setText("▼" if self.is_expanded else "▶")
+        if self.content_widget:
+            self.content_widget.setVisible(self.is_expanded)
+        if self.toggle_button:
+            self.toggle_button.setText("▼" if self.is_expanded else "▶")
+
+        # Save state
+        print(f"\nDebug - Saving section state for {self.title}")
+        print(f"Debug - State before update: {self.state.state}")
+        print(f"Debug - is_expanded: {self.is_expanded}")
+        
+        key = f"section_{self.title}_expanded"
+        self.state.state[key] = self.is_expanded
+        print(f"Debug - State after update: {self.state.state}")
+        
+        try:
+            self.state.save()
+            print(f"Debug - Section state saved for {self.title}")
+        except Exception as e:
+            print(f"Error saving state: {e}")
+            traceback.print_exc()
 
     def update_count(self, count):
         """Update the count display"""
