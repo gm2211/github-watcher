@@ -29,6 +29,10 @@ class PRWatcherUI(QMainWindow):
         self.workers = []
         self.refresh_worker = None
 
+        # Initialize state first
+        from src.state import UIState
+        self.state = UIState()
+
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -64,16 +68,27 @@ class PRWatcherUI(QMainWindow):
         scroll_layout.setSpacing(10)
 
         # Add sections to scroll area
-        scroll_layout.addWidget(self.needs_review_frame, 1)  # Add stretch factor
-        scroll_layout.addWidget(self.changes_requested_frame, 1)  # Add stretch factor
-        scroll_layout.addWidget(self.open_prs_frame, 1)  # Add stretch factor
-        scroll_layout.addWidget(self.recently_closed_frame, 1)  # Add stretch factor
+        scroll_layout.addWidget(self.needs_review_frame, 1)
+        scroll_layout.addWidget(self.changes_requested_frame, 1)
+        scroll_layout.addWidget(self.open_prs_frame, 1)
+        scroll_layout.addWidget(self.recently_closed_frame, 1)
 
         scroll_area.setWidget(scroll_widget)
-        main_layout.addWidget(scroll_area, 1)  # Add stretch factor to make scroll area expand
+        main_layout.addWidget(scroll_area, 1)
 
-        # Initialize state
-        self.settings = get_settings()
+        # Load and display saved PR data
+        open_prs, _ = self.state.get_pr_data('open')
+        needs_review, _ = self.state.get_pr_data('review')
+        changes_requested, _ = self.state.get_pr_data('attention')
+        recently_closed, _ = self.state.get_pr_data('closed')
+
+        # Update UI with saved data
+        self.update_pr_lists(
+            open_prs,
+            needs_review,
+            changes_requested,
+            recently_closed
+        )
 
     def _setup_header(self, header_layout):
         """Setup the header section with title and buttons"""
@@ -481,6 +496,12 @@ class PRWatcherUI(QMainWindow):
             print(f"Error saving UI state: {e}")
             traceback.print_exc()
 
+    def showEvent(self, event):
+        """Handle window show event"""
+        super().showEvent(event)
+        # Schedule refresh after window is shown
+        QTimer.singleShot(0, self.refresh_data)
+
 def open_ui(
     open_prs_by_user,
     prs_awaiting_review_by_user,
@@ -508,20 +529,32 @@ def open_ui(
         )
     window.github_prs = github_prs
 
-    # Initialize user filter before updating PR lists
+    # Initialize user filter
     window.update_user_filter()
 
-    # Update initial data
-    window.update_pr_lists(
-        open_prs_by_user,
-        prs_awaiting_review_by_user,
-        prs_that_need_attention_by_user,
-        user_recently_closed_prs_by_user,
-    )
+    # Load saved state and update UI before showing window
+    state = UIState()
+    open_prs, _ = state.get_pr_data('open')
+    needs_review, _ = state.get_pr_data('review')
+    changes_requested, _ = state.get_pr_data('attention')
+    recently_closed, _ = state.get_pr_data('closed')
+
+    # Update UI with saved data
+    if any([open_prs, needs_review, changes_requested, recently_closed]):
+        print("\nDebug - Loading saved PR data")
+        window.update_pr_lists(
+            open_prs,
+            needs_review,
+            changes_requested,
+            recently_closed
+        )
 
     # Initialize refresh timer with current settings
     window.setup_refresh_timer(settings.get("refresh"))
 
     window.show()
+
+    # Schedule refresh after window is shown
+    QTimer.singleShot(0, window.refresh_data)
 
     return app.exec() 
