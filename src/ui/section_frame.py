@@ -16,6 +16,7 @@ class SectionFrame(QFrame):
     def __init__(self, title, parent=None):
         super().__init__(parent)
         self.setObjectName("sectionFrame")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.title = title
         self.prs = {}
         self.spinner_label = None
@@ -109,11 +110,13 @@ class SectionFrame(QFrame):
             self.scroll_area = QScrollArea()
             self.scroll_area.setWidgetResizable(True)
             self.scroll_area.setStyleSheet(Styles.SCROLL_AREA)
+            self.scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
             # Create content widget and layout
             self.content_widget = QWidget()
             self.content_widget.setStyleSheet("background: transparent;")
-            self.content_layout = QVBoxLayout(self.content_widget)  # Parent the layout to the widget
+            self.content_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            self.content_layout = QVBoxLayout(self.content_widget)
             self.content_layout.setContentsMargins(0, 0, 0, 0)
             self.content_layout.setSpacing(5)
 
@@ -121,7 +124,7 @@ class SectionFrame(QFrame):
             self.scroll_area.setWidget(self.content_widget)
             self.main_layout.addWidget(self.scroll_area)
 
-            print(f"Debug - Scroll area created for {self.title} with content_layout: {self.content_layout}")
+            print(f"Debug - Scroll area created for {self.title}")
 
         except Exception as e:
             print(f"Error creating scroll area: {e}")

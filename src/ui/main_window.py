@@ -33,6 +33,8 @@ class PRWatcherUI(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
 
         # Create section frames first
         self.needs_review_frame = SectionFrame("Needs Review")
@@ -58,16 +60,17 @@ class PRWatcherUI(QMainWindow):
         scroll_widget = QWidget()
         scroll_widget.setStyleSheet("background: transparent;")
         scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(10)
 
         # Add sections to scroll area
-        scroll_layout.addWidget(self.needs_review_frame)
-        scroll_layout.addWidget(self.changes_requested_frame)
-        scroll_layout.addWidget(self.open_prs_frame)
-        scroll_layout.addWidget(self.recently_closed_frame)
-        scroll_layout.addStretch()
+        scroll_layout.addWidget(self.needs_review_frame, 1)  # Add stretch factor
+        scroll_layout.addWidget(self.changes_requested_frame, 1)  # Add stretch factor
+        scroll_layout.addWidget(self.open_prs_frame, 1)  # Add stretch factor
+        scroll_layout.addWidget(self.recently_closed_frame, 1)  # Add stretch factor
 
         scroll_area.setWidget(scroll_widget)
-        main_layout.addWidget(scroll_area)
+        main_layout.addWidget(scroll_area, 1)  # Add stretch factor to make scroll area expand
 
         # Initialize state
         self.settings = get_settings()
