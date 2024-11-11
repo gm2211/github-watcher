@@ -1,5 +1,4 @@
 import traceback
-from datetime import timedelta
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
@@ -15,7 +14,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.github_auth import get_github_api_key
 from src.github_prs_client import GitHubPRsClient
 from src.notifications import notify
 from src.settings import Settings

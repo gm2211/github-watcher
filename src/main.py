@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QApplication
 from src.github_auth import get_github_api_key
 from src.github_prs_client import GitHubPRsClient
 from src.settings import Settings
-from src.ui.main_window import MainWindow, open_ui
+from src.ui.main_window import MainWindow
 from src.ui.state import UIState
 
 VERSION = "1.0.0"
