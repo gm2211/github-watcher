@@ -16,7 +16,8 @@ class SectionFrame(QFrame):
     def __init__(self, title, parent=None):
         super().__init__(parent)
         self.setObjectName("sectionFrame")
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        # Allow vertical expansion but prefer minimum size
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.title = title
         self.prs = {}
         self.is_loading = False
@@ -45,8 +46,9 @@ class SectionFrame(QFrame):
         
         # Apply saved state
         if not self.is_expanded:
-            if self.content_widget:
-                self.content_widget.setVisible(False)
+            self.setMaximumHeight(self.header_container.height() + 20)  # Header height + margins
+            if self.scroll_area:
+                self.scroll_area.hide()
             if self.toggle_button:
                 self.toggle_button.setText("▶")
             print(f"Debug - Applied collapsed state to {title}")
@@ -55,12 +57,12 @@ class SectionFrame(QFrame):
         """Create header section"""
         print(f"\nDebug - Creating header for {self.title}")
         # Make the entire header clickable
-        header_container = QFrame()
-        header_container.setFixedHeight(30)
-        header_container.setSizePolicy(
+        self.header_container = QFrame()  # Store reference for height calculations
+        self.header_container.setFixedHeight(30)
+        self.header_container.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
-        header_container.setStyleSheet("""
+        self.header_container.setStyleSheet("""
             QFrame {
                 background: transparent;
             }
@@ -68,10 +70,10 @@ class SectionFrame(QFrame):
                 background: rgba(255, 255, 255, 0.1);
             }
         """)
-        header_container.mousePressEvent = lambda _: self.toggle_content()
-        header_container.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.header_container.mousePressEvent = lambda _: self.toggle_content()
+        self.header_container.setCursor(Qt.CursorShape.PointingHandCursor)
         
-        header_layout = QHBoxLayout(header_container)
+        header_layout = QHBoxLayout(self.header_container)
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(5)
 
@@ -110,7 +112,7 @@ class SectionFrame(QFrame):
         self.left_layout.addStretch()
 
         header_layout.addWidget(left_header)
-        self.main_layout.addWidget(header_container)
+        self.main_layout.addWidget(self.header_container)
 
     def create_scroll_area(self):
         """Create or recreate scroll area and content widget"""
@@ -151,20 +153,25 @@ class SectionFrame(QFrame):
         if not self.scroll_area:
             return
 
+        print(f"\nDebug - Toggling section {self.title}")
+        print(f"Debug - Current state: expanded={self.is_expanded}")
+
         self.is_expanded = not self.is_expanded
-        if self.content_widget:
-            self.content_widget.setVisible(self.is_expanded)
-        if self.toggle_button:
-            self.toggle_button.setText("▼" if self.is_expanded else "▶")
+        
+        if self.is_expanded:
+            self.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+            self.scroll_area.show()
+        else:
+            self.setMaximumHeight(self.header_container.height() + 20)  # Header height + margins
+            self.scroll_area.hide()
+            
+        self.toggle_button.setText("▼" if self.is_expanded else "▶")
+
+        print(f"Debug - New state: expanded={self.is_expanded}")
 
         # Save state
-        print(f"\nDebug - Saving section state for {self.title}")
-        print(f"Debug - State before update: {self.state.state}")
-        print(f"Debug - is_expanded: {self.is_expanded}")
-        
         key = f"section_{self.title}_expanded"
         self.state.state[key] = self.is_expanded
-        print(f"Debug - State after update: {self.state.state}")
         
         try:
             self.state.save()
