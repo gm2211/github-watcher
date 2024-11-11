@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from .theme import Colors, Styles
 import traceback
@@ -19,8 +19,6 @@ class SectionFrame(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.title = title
         self.prs = {}
-        self.spinner_label = None
-        self.spinner_timer = None
         self.is_loading = False
         self.scroll_area = None
         self.content_widget = None
@@ -51,7 +49,7 @@ class SectionFrame(QFrame):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(5)
 
-        # Left side of header (title, toggle, and spinner)
+        # Left side of header (title and toggle)
         left_header = QWidget()
         left_header.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
@@ -71,9 +69,6 @@ class SectionFrame(QFrame):
         self.count_label = QLabel("(0)")
         self.count_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         self.left_layout.addWidget(self.count_label)
-
-        # Create spinner
-        self.create_spinner()
 
         # Toggle button
         self.toggle_button = QLabel("▼")
@@ -130,59 +125,6 @@ class SectionFrame(QFrame):
             print(f"Error creating scroll area: {e}")
             traceback.print_exc()
 
-    def create_spinner(self):
-        """Create spinner label and timer"""
-        try:
-            # Clean up old spinner if it exists
-            if self.spinner_label:
-                self.spinner_label.deleteLater()
-            if self.spinner_timer:
-                self.spinner_timer.stop()
-                self.spinner_timer.deleteLater()
-
-            # Create new spinner
-            self.spinner_label = QLabel("⟳")
-            self.spinner_label.setFixedWidth(20)
-            self.spinner_label.setStyleSheet(f"""
-                QLabel {{
-                    color: {Colors.INFO};
-                    font-size: 14px;
-                    padding: 0 5px;
-                }}
-            """)
-            self.spinner_label.hide()
-
-            # Add to layout if we have one
-            if hasattr(self, "left_layout"):
-                self.left_layout.addWidget(self.spinner_label)
-
-            # Create new timer
-            self.spinner_timer = QTimer(self)
-            self.spinner_timer.timeout.connect(self.rotate_spinner)
-            self.spinner_timer.setInterval(50)
-            self.spinner_rotation = 0
-
-        except Exception as e:
-            print(f"Warning: Error creating spinner: {e}")
-            self.spinner_label = None
-            self.spinner_timer = None
-
-    def rotate_spinner(self):
-        """Rotate the spinner icon"""
-        if not hasattr(self, "spinner_rotation"):
-            self.spinner_rotation = 0
-
-        self.spinner_rotation = (self.spinner_rotation + 30) % 360
-        if self.spinner_label and self.spinner_label.parent():
-            self.spinner_label.setStyleSheet(f"""
-                QLabel {{
-                    color: {Colors.INFO};
-                    font-size: 14px;
-                    padding: 0 5px;
-                    -webkit-transform: rotate({self.spinner_rotation}deg);
-                }}
-            """)
-
     def toggle_content(self):
         """Toggle the visibility of the content"""
         if not self.scroll_area:
@@ -197,29 +139,9 @@ class SectionFrame(QFrame):
         self.count_label.setText(f"({count})")
 
     def start_loading(self):
-        """Start loading animation"""
-        if self.is_loading:
-            return
-
+        """Start loading state"""
         self.is_loading = True
-        try:
-            if not self.spinner_label or not self.spinner_label.parent():
-                self.create_spinner()
-
-            if self.spinner_label and self.spinner_label.parent():
-                self.spinner_label.show()
-                if self.spinner_timer:
-                    self.spinner_timer.start()
-        except Exception as e:
-            print(f"Warning: Error starting loading animation: {e}")
 
     def stop_loading(self):
-        """Stop loading animation"""
+        """Stop loading state"""
         self.is_loading = False
-        try:
-            if self.spinner_timer and self.spinner_timer.isActive():
-                self.spinner_timer.stop()
-            if self.spinner_label and self.spinner_label.parent():
-                self.spinner_label.hide()
-        except Exception as e:
-            print(f"Warning: Error stopping loading animation: {e}") 
