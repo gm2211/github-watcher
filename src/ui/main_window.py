@@ -93,7 +93,7 @@ class MainWindow(QMainWindow):
 
         # Create and add filters
         self.filters = FiltersBar()
-        self.filters.filtersChanged.connect(self.apply_filters)
+        self.filters.filtersChanged.connect(self._on_filters_changed)
         header_vertical.addWidget(self.filters)
 
         # Add header container to main layout
@@ -201,6 +201,27 @@ class MainWindow(QMainWindow):
             traceback.print_exc()  # Print full stack trace for debugging
             QMessageBox.critical(self, "Error", f"Failed to apply settings: {str(e)}")
 
+    def _on_filters_changed(self, filter_state):
+        """Handle filter changes"""
+        print("\nDebug - Filters changed:", filter_state)
+        try:
+            # Get current data for each section
+            open_prs, _ = self.state.get_pr_data("open")
+            needs_review, _ = self.state.get_pr_data("review")
+            changes_requested, _ = self.state.get_pr_data("attention")
+            recently_closed, _ = self.state.get_pr_data("closed")
+
+            # Apply filters with current data
+            self.apply_filters(
+                open_prs,
+                needs_review,
+                changes_requested,
+                recently_closed
+            )
+        except Exception as e:
+            print(f"Error handling filter change: {e}")
+            traceback.print_exc()
+
     def apply_filters(
         self,
         open_prs=None,
@@ -211,7 +232,7 @@ class MainWindow(QMainWindow):
         """Apply filters to PR lists"""
         print("\nDebug - Applying filters")
         try:
-            filter_state = self.filters.filtersState  # Use the property directly
+            filter_state = self.filters.get_filter_state()
             print(f"Debug - Filter state: {filter_state}")
 
             # Update each section with filtered data
@@ -225,9 +246,7 @@ class MainWindow(QMainWindow):
             for title, frame, data in sections:
                 print(f"\nDebug - Updating section: {title}")
                 if data is not None:
-                    self._update_section(
-                        frame, data, filter_state
-                    )  # Pass filter_state here
+                    self._update_section(frame, data, filter_state)
         except Exception as e:
             print(f"Error applying filters: {e}")
             traceback.print_exc()

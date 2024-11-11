@@ -4,123 +4,122 @@ from PyQt6.QtWidgets import QComboBox, QListView
 
 
 class MultiSelectComboBox(QComboBox):
-    selectionChanged = pyqtSignal()  # Signal when selection changes
+    selectionChanged = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._items = set()
         self._selected = {"All Authors"}
-        self._is_updating = False
-
-        # Create model
+        
+        # Create and set model
         self._model = QStandardItemModel()
         self.setModel(self._model)
-
+        
         # Setup view
-        list_view = QListView()
-        list_view.setSelectionMode(QListView.SelectionMode.SingleSelection)
-        list_view.setMinimumWidth(200)
-        self.setView(list_view)
-
+        view = QListView()
+        view.setMinimumWidth(200)
+        self.setView(view)
+        
+        # Style setup
+        self.setStyleSheet("""
+            QComboBox {
+                border: 1px solid #373e47;
+                border-radius: 6px;
+                padding: 4px 8px;
+                background-color: #1c2128;
+            }
+            QComboBox:hover {
+                border-color: #58a6ff;
+                background-color: #2d333b;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                image: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #1c2128;
+                border: 1px solid #373e47;
+                border-radius: 6px;
+                selection-background-color: transparent;
+                outline: 0;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 8px;
+                min-height: 24px;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #2d333b;
+            }
+        """)
+        
         # Initial setup
         self.setEditable(False)
-
+        
         # Connect signals
-        self.view().clicked.connect(self._handle_click)
+        self._model.itemChanged.connect(self._on_item_changed)
 
-    def _handle_click(self, index):
-        """Handle item click"""
-        if self._is_updating:
-            return
+    def _on_item_changed(self, item):
+        """Handle checkbox state changes"""
+        text = item.text()
+        checked = item.checkState() == Qt.CheckState.Checked
 
-        self._is_updating = True
-        try:
-            item = self._model.itemFromIndex(index)
-            if not item:
-                return
-
-            text = item.text()
-            if text == "All Authors":
-                # Clear all other selections
+        if text == "All Authors":
+            if checked:
+                # Select only "All Authors"
                 self._selected = {"All Authors"}
-                for i in range(self._model.rowCount()):
-                    if model_item := self._model.item(i):
-                        model_item.setCheckState(
-                            Qt.CheckState.Checked if i == 0 else Qt.CheckState.Unchecked
-                        )
+                # Update all other checkboxes
+                for row in range(1, self._model.rowCount()):
+                    self._model.item(row).setCheckState(Qt.CheckState.Unchecked)
+        else:
+            if checked:
+                # Add to selection and uncheck "All Authors"
+                self._selected.add(text)
+                self._selected.discard("All Authors")
+                if all_authors := self._model.item(0):
+                    all_authors.setCheckState(Qt.CheckState.Unchecked)
             else:
-                # Handle individual author selection
-                if text in self._selected:
-                    self._selected.discard(text)
-                    item.setCheckState(Qt.CheckState.Unchecked)
-                    if not self._selected:
-                        # If nothing selected, select "All Authors"
-                        self._selected = {"All Authors"}
-                        if all_authors := self._model.item(0):
-                            all_authors.setCheckState(Qt.CheckState.Checked)
-                else:
-                    self._selected.add(text)
-                    item.setCheckState(Qt.CheckState.Checked)
-                    # Uncheck "All Authors"
-                    if "All Authors" in self._selected:
-                        self._selected.discard("All Authors")
-                        if all_authors := self._model.item(0):
-                            all_authors.setCheckState(Qt.CheckState.Unchecked)
+                # Remove from selection
+                self._selected.discard(text)
+                # If nothing selected, select "All Authors"
+                if len(self._selected) == 0:
+                    self._selected = {"All Authors"}
+                    if all_authors := self._model.item(0):
+                        all_authors.setCheckState(Qt.CheckState.Checked)
 
-            self._update_display()
-            self.selectionChanged.emit()
-
-        finally:
-            self._is_updating = False
+        self._update_display()
+        self.selectionChanged.emit()
 
     def _update_display(self):
         """Update the display text"""
         if "All Authors" in self._selected:
             self.setCurrentText("All Authors")
         else:
-            self.setCurrentText(", ".join(sorted(self._selected)))
+            selected = sorted(self._selected)
+            if len(selected) <= 2:
+                self.setCurrentText(", ".join(selected))
+            else:
+                self.setCurrentText(f"{selected[0]}, {selected[1]} (+{len(selected)-2})")
 
     def addItems(self, items):
-        """Add multiple items to the combo box"""
-        if self._is_updating:
-            return
+        """Add items to the combo box"""
+        self._model.clear()
+        self._selected = {"All Authors"}
+        
+        for text in items:
+            item = QStandardItem(text)
+            item.setCheckState(Qt.CheckState.Checked if text == "All Authors" else Qt.CheckState.Unchecked)
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+            self._model.appendRow(item)
+        
+        self._update_display()
 
-        self._is_updating = True
-        try:
-            self._model.clear()
-            self._items.clear()
-            self._selected = {"All Authors"}
-
-            for text in items:
-                if text and isinstance(text, str):
-                    self._items.add(text)
-                    item = QStandardItem(text)
-                    item.setCheckState(
-                        Qt.CheckState.Checked
-                        if text == "All Authors"
-                        else Qt.CheckState.Unchecked
-                    )
-                    self._model.appendRow(item)
-
-            self._update_display()
-
-        finally:
-            self._is_updating = False
+    def get_selected_items(self):
+        """Get currently selected items"""
+        return self._selected.copy()
 
     def clear(self):
         """Clear all items"""
-        if self._is_updating:
-            return
-
-        self._is_updating = True
-        try:
-            self._model.clear()
-            self._items.clear()
-            self._selected = {"All Authors"}
-            self.setCurrentText("All Authors")
-        finally:
-            self._is_updating = False
-
-    def getSelectedItems(self):
-        """Get the currently selected items"""
-        return self._selected.copy()
+        self._model.clear()
+        self._selected = {"All Authors"}
+        self.setCurrentText("All Authors")

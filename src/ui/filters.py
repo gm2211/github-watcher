@@ -6,44 +6,44 @@ from .theme import Colors, Styles
 
 
 class FiltersBar(QWidget):
-    filtersChanged = pyqtSignal()  # Signal when any filter changes
+    filtersChanged = pyqtSignal(dict)  # Changed to emit the filter state
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.user_filter = MultiSelectComboBox()
+        self.show_drafts_toggle = QCheckBox("Show Drafts")
+        self.group_by_user_toggle = QCheckBox("Group by User")
+
         self.setObjectName("filtersBar")
         self.setStyleSheet(Styles.FILTERS)
-        
+
         # Initialize state
         self.filtersState = {
             "show_drafts": True,
             "group_by_user": False,
             "selected_users": {"All Authors"},
         }
-        
+
         # Create layout
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(16, 8, 16, 8)
         self.layout.setSpacing(16)
-        
+
         # Create widgets
         self._setup_toggles()
         self._setup_user_filter()
-        
+
         # Add stretch at the end
         self.layout.addStretch()
 
     def _setup_toggles(self):
         """Setup toggle checkboxes"""
         # Show drafts toggle
-        self.show_drafts_toggle = QCheckBox("Show Drafts")
         self.show_drafts_toggle.setChecked(True)
-        self.show_drafts_toggle.setStyleSheet(Styles.CHECKBOX)
         self.show_drafts_toggle.stateChanged.connect(self._on_drafts_toggled)
         self.layout.addWidget(self.show_drafts_toggle)
 
         # Group by user toggle
-        self.group_by_user_toggle = QCheckBox("Group by User")
-        self.group_by_user_toggle.setStyleSheet(Styles.CHECKBOX)
         self.group_by_user_toggle.stateChanged.connect(self._on_grouping_toggled)
         self.layout.addWidget(self.group_by_user_toggle)
 
@@ -61,9 +61,8 @@ class FiltersBar(QWidget):
         filter_layout.addWidget(label)
 
         # Combo box
-        self.user_filter = MultiSelectComboBox()
         self.user_filter.setStyleSheet(Styles.COMBO_BOX)
-        self.user_filter.selectionChanged.connect(self.filtersChanged.emit)
+        self.user_filter.selectionChanged.connect(self._on_user_filter_changed)
         filter_layout.addWidget(self.user_filter)
 
         self.layout.addWidget(filter_container)
@@ -76,9 +75,13 @@ class FiltersBar(QWidget):
         self.filtersState["group_by_user"] = self.group_by_user_toggle.isChecked()
         self._update_filter_state()
 
+    def _on_user_filter_changed(self):
+        self.filtersState["selected_users"] = self.user_filter.get_selected_items()
+        self._update_filter_state()
+
     def _update_filter_state(self):
-        self.filtersState["selected_users"] = self.user_filter.getSelectedItems()
-        self.filtersChanged.emit()
+        """Emit the current filter state"""
+        self.filtersChanged.emit(self.filtersState)
 
     def update_user_filter(self, users):
         """Update available users in the filter"""
@@ -97,8 +100,4 @@ class FiltersBar(QWidget):
 
     def get_filter_state(self):
         """Get current state of all filters"""
-        return {
-            "show_drafts": self.show_drafts_toggle.isChecked(),
-            "group_by_user": self.group_by_user_toggle.isChecked(),
-            "selected_users": self.user_filter.getSelectedItems(),
-        }
+        return self.filtersState.copy()
