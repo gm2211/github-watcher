@@ -60,13 +60,14 @@ class MainWindow(QMainWindow):
         header_vertical.setContentsMargins(0, 0, 0, 0)
         header_vertical.setSpacing(0)
 
-        # Header content
+        # Header content (title and buttons)
         header_content = QWidget()
         header_layout = QHBoxLayout(header_content)
-        header_layout.setContentsMargins(16, 16, 16, 16)
+        header_layout.setContentsMargins(16, 16, 16, 8)
 
         # Left side: loading indicator and title
         left_layout = QHBoxLayout()
+        left_layout.setSpacing(8)
 
         # Loading indicator
         self.loading_label = QLabel("Loading...")
@@ -90,11 +91,12 @@ class MainWindow(QMainWindow):
         # Add header content to vertical layout
         header_vertical.addWidget(header_content)
 
-        # Create filters
+        # Create and add filters
         self.filters = FiltersBar()
         self.filters.filtersChanged.connect(self.apply_filters)
         header_vertical.addWidget(self.filters)
 
+        # Add header container to main layout
         self.main_layout.addWidget(header_container)
 
         # Create scroll area for sections

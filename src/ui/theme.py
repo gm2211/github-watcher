@@ -5,7 +5,7 @@ class Colors:
     BG_DARK = "#21262d"  # Surface primary (card background)
     BG_LIGHT = "#30363d"  # Surface secondary (button background)
     BG_LIGHTER = "#373e47"  # Surface tertiary (button hover)
-    BG_HEADER = "#010409"  # Header background (even darker than darkest)
+    BG_HEADER = BG_DARK
 
     # Text colors
     TEXT_PRIMARY = "#c9d1d9"  # Default text
@@ -48,8 +48,9 @@ class Styles:
     HEADER = f"""
         QWidget#headerContainer {{
             background-color: {Colors.BG_HEADER};
-            border-bottom: 1px solid {Colors.BORDER_HEADER_BOTTOM};
-            margin-bottom: 24px;
+            border-radius: 4px;
+            margin-bottom: 0px;
+            padding-bottom: 0px;
         }}
         QLabel#headerTitle {{
             color: {Colors.TEXT_HEADER};
@@ -70,7 +71,6 @@ class Styles:
             border-radius: 4px;
             font-size: 13px;
             font-weight: 500;
-            margin-bottom: 8px;
         }}
         QPushButton:hover {{
             background-color: {Colors.BG_DARK};
