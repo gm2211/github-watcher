@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 from .theme import Colors, Styles
+import traceback
 
 class SectionFrame(QFrame):
     def __init__(self, title, parent=None):
@@ -25,6 +26,7 @@ class SectionFrame(QFrame):
         self.content_layout = None
         self.is_expanded = True
 
+        # Use theme styles
         self.setStyleSheet(Styles.SECTION_FRAME)
 
         self.main_layout = QVBoxLayout(self)
@@ -53,6 +55,7 @@ class SectionFrame(QFrame):
         left_header.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
+        left_header.setStyleSheet("background: transparent;")
         self.left_layout = QHBoxLayout(left_header)
         self.left_layout.setContentsMargins(0, 0, 0, 0)
         self.left_layout.setSpacing(5)
@@ -60,19 +63,12 @@ class SectionFrame(QFrame):
         # Title label with count
         self.title_label = QLabel(self.title)
         self.title_label.setFont(QFont("", 14, QFont.Weight.Bold))
+        self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         self.left_layout.addWidget(self.title_label)
 
         # Count label
         self.count_label = QLabel("(0)")
-        self.count_label.setStyleSheet(
-            """
-            QLabel {
-                color: #8b949e;
-                font-size: 12px;
-                padding-left: 5px;
-            }
-        """
-        )
+        self.count_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         self.left_layout.addWidget(self.count_label)
 
         # Create spinner
@@ -80,18 +76,16 @@ class SectionFrame(QFrame):
 
         # Toggle button
         self.toggle_button = QLabel("▼")
-        self.toggle_button.setStyleSheet(
-            """
-            QLabel {
-                color: #ffffff;
+        self.toggle_button.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_PRIMARY};
                 padding: 0px 5px;
                 font-size: 12px;
-            }
-            QLabel:hover {
-                color: #cccccc;
-            }
-        """
-        )
+            }}
+            QLabel:hover {{
+                color: {Colors.TEXT_SECONDARY};
+            }}
+        """)
         self.toggle_button.setFixedSize(20, 20)
         self.toggle_button.mousePressEvent = lambda _: self.toggle_content()
         self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -100,88 +94,59 @@ class SectionFrame(QFrame):
 
         header_layout.addWidget(left_header)
         self.main_layout.addWidget(header_container)
-        print(f"Debug - Header created for {self.title}")
 
     def create_scroll_area(self):
         """Create or recreate scroll area and content widget"""
         print(f"\nDebug - Creating scroll area for {self.title}")
         try:
             # Clean up old widgets if they exist
-            if hasattr(self, "scroll_area"):
-                try:
-                    self.scroll_area.deleteLater()
-                except:
-                    pass
-            if hasattr(self, "content_widget"):
-                try:
-                    self.content_widget.deleteLater()
-                except:
-                    pass
+            if hasattr(self, "scroll_area") and self.scroll_area is not None:
+                self.scroll_area.deleteLater()
+            if hasattr(self, "content_widget") and self.content_widget is not None:
+                self.content_widget.deleteLater()
 
             # Create new widgets
             self.scroll_area = QScrollArea()
             self.scroll_area.setWidgetResizable(True)
-            self.scroll_area.setStyleSheet(
-                """
-                QScrollArea {
-                    border: none;
-                    background-color: transparent;
-                }
-            """
-            )
+            self.scroll_area.setStyleSheet(Styles.SCROLL_AREA)
 
+            # Create content widget and layout
             self.content_widget = QWidget()
-            self.content_layout = QVBoxLayout(self.content_widget)
+            self.content_widget.setStyleSheet("background: transparent;")
+            self.content_layout = QVBoxLayout(self.content_widget)  # Parent the layout to the widget
             self.content_layout.setContentsMargins(0, 0, 0, 0)
             self.content_layout.setSpacing(5)
 
+            # Set the widget in the scroll area
             self.scroll_area.setWidget(self.content_widget)
             self.main_layout.addWidget(self.scroll_area)
-            print(f"Debug - Scroll area created for {self.title}")
+
+            print(f"Debug - Scroll area created for {self.title} with content_layout: {self.content_layout}")
 
         except Exception as e:
             print(f"Error creating scroll area: {e}")
-
-    def toggle_content(self):
-        """Toggle the visibility of the content"""
-        print(f"\nDebug - Toggling content for {self.title}")
-        if not self.scroll_area:
-            return
-
-        self.is_expanded = not self.is_expanded
-        self.scroll_area.setVisible(self.is_expanded)
-        self.toggle_button.setText("▼" if self.is_expanded else "▶")
-        print(f"Debug - Content toggled: {'expanded' if self.is_expanded else 'collapsed'}")
+            traceback.print_exc()
 
     def create_spinner(self):
         """Create spinner label and timer"""
-        print(f"\nDebug - Creating spinner for {self.title}")
         try:
             # Clean up old spinner if it exists
             if self.spinner_label:
-                try:
-                    self.spinner_label.deleteLater()
-                except:
-                    pass
+                self.spinner_label.deleteLater()
             if self.spinner_timer:
-                try:
-                    self.spinner_timer.stop()
-                    self.spinner_timer.deleteLater()
-                except:
-                    pass
+                self.spinner_timer.stop()
+                self.spinner_timer.deleteLater()
 
             # Create new spinner
             self.spinner_label = QLabel("⟳")
             self.spinner_label.setFixedWidth(20)
-            self.spinner_label.setStyleSheet(
-                """
-                QLabel {
-                    color: #0d6efd;
+            self.spinner_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {Colors.INFO};
                     font-size: 14px;
                     padding: 0 5px;
-                }
-            """
-            )
+                }}
+            """)
             self.spinner_label.hide()
 
             # Add to layout if we have one
@@ -193,7 +158,6 @@ class SectionFrame(QFrame):
             self.spinner_timer.timeout.connect(self.rotate_spinner)
             self.spinner_timer.setInterval(50)
             self.spinner_rotation = 0
-            print(f"Debug - Spinner created for {self.title}")
 
         except Exception as e:
             print(f"Warning: Error creating spinner: {e}")
@@ -207,20 +171,26 @@ class SectionFrame(QFrame):
 
         self.spinner_rotation = (self.spinner_rotation + 30) % 360
         if self.spinner_label and self.spinner_label.parent():
-            self.spinner_label.setStyleSheet(
-                f"""
+            self.spinner_label.setStyleSheet(f"""
                 QLabel {{
-                    color: #0d6efd;
+                    color: {Colors.INFO};
                     font-size: 14px;
                     padding: 0 5px;
-                    transform: rotate({self.spinner_rotation}deg);
+                    -webkit-transform: rotate({self.spinner_rotation}deg);
                 }}
-            """
-            )
+            """)
+
+    def toggle_content(self):
+        """Toggle the visibility of the content"""
+        if not self.scroll_area:
+            return
+
+        self.is_expanded = not self.is_expanded
+        self.content_widget.setVisible(self.is_expanded)
+        self.toggle_button.setText("▼" if self.is_expanded else "▶")
 
     def update_count(self, count):
         """Update the count display"""
-        print(f"\nDebug - Updating count for {self.title}: {count}")
         self.count_label.setText(f"({count})")
 
     def start_loading(self):
@@ -228,7 +198,6 @@ class SectionFrame(QFrame):
         if self.is_loading:
             return
 
-        print(f"\nDebug - Starting loading animation for {self.title}")
         self.is_loading = True
         try:
             if not self.spinner_label or not self.spinner_label.parent():
@@ -243,7 +212,6 @@ class SectionFrame(QFrame):
 
     def stop_loading(self):
         """Stop loading animation"""
-        print(f"\nDebug - Stopping loading animation for {self.title}")
         self.is_loading = False
         try:
             if self.spinner_timer and self.spinner_timer.isActive():

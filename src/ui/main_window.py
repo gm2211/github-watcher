@@ -1,3 +1,4 @@
+import traceback
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QPushButton, QLabel, QScrollArea, QSizePolicy,
@@ -52,16 +53,10 @@ class PRWatcherUI(QMainWindow):
         # Create scroll area for sections
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet(
-            """
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-        """
-        )
+        scroll_area.setStyleSheet(Styles.SCROLL_AREA)
 
         scroll_widget = QWidget()
+        scroll_widget.setStyleSheet("background: transparent;")
         scroll_layout = QVBoxLayout(scroll_widget)
 
         # Add sections to scroll area
@@ -84,21 +79,20 @@ class PRWatcherUI(QMainWindow):
 
         # Loading indicator
         self.loading_label = QLabel("Loading...")
-        self.loading_label.setStyleSheet(
-            """
-            QLabel {
-                color: #0d6efd;
+        self.loading_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.INFO};
                 font-size: 12px;
                 padding: 0 5px;
-            }
-        """
-        )
+            }}
+        """)
         self.loading_label.hide()
         left_layout.addWidget(self.loading_label)
 
         # Title
         title = QLabel("GitHub PR Watcher")
         title.setFont(QFont("", 16, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         left_layout.addWidget(title)
 
         header_layout.addLayout(left_layout)
@@ -111,40 +105,25 @@ class PRWatcherUI(QMainWindow):
 
     def _setup_buttons(self, buttons_layout):
         """Setup the header buttons"""
-        button_style = """
-            QPushButton {
-                background-color: #404040;
-                border: none;
-                border-radius: 5px;
-                padding: 5px 10px;
-                color: white;
-                font-size: 12px;
-                height: 25px;
-            }
-            QPushButton:hover {
-                background-color: #505050;
-            }
-        """
-
         # Test notification button
         test_notif_btn = QPushButton("🔔 Test")
         test_notif_btn.clicked.connect(self.show_test_notification)
         test_notif_btn.setFixedWidth(80)
-        test_notif_btn.setStyleSheet(button_style)
+        test_notif_btn.setStyleSheet(Styles.BUTTON)
         buttons_layout.addWidget(test_notif_btn)
 
         # Refresh button
         refresh_btn = QPushButton("↻ Refresh")
         refresh_btn.clicked.connect(self.refresh_data)
         refresh_btn.setFixedWidth(80)
-        refresh_btn.setStyleSheet(button_style)
+        refresh_btn.setStyleSheet(Styles.BUTTON)
         buttons_layout.addWidget(refresh_btn)
 
         # Settings button
         settings_btn = QPushButton("⚙ Settings")
         settings_btn.clicked.connect(self.show_settings)
         settings_btn.setFixedWidth(80)
-        settings_btn.setStyleSheet(button_style)
+        settings_btn.setStyleSheet(Styles.BUTTON)
         buttons_layout.addWidget(settings_btn)
 
     def show_test_notification(self):
@@ -191,7 +170,6 @@ class PRWatcherUI(QMainWindow):
 
         except Exception as e:
             print(f"Error applying settings changes: {e}")
-            import traceback
             traceback.print_exc()  # Print full stack trace for debugging
             QMessageBox.critical(self, "Error", f"Failed to apply settings: {str(e)}")
 

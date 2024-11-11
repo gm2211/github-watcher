@@ -1,10 +1,11 @@
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, 
-    QSizePolicy, QWidget
+    QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 import webbrowser
+from .theme import Colors, Styles
 
 def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45, opacity=1.0):
     """Create a styled badge widget"""
@@ -130,23 +131,7 @@ def create_pr_card(pr_data, settings, parent=None):
     card = QFrame(parent)
     card.setObjectName("prCard")
     card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-    card.setStyleSheet(
-        """
-        QFrame#prCard {
-            background-color: #2d2d2d;
-            border-radius: 12px;
-            padding: 10px;
-            margin: 3px 0;
-        }
-        QFrame {
-            background: transparent;
-            border-radius: 12px;
-        }
-        QLabel {
-            background: transparent;
-        }
-    """
-    )
+    card.setStyleSheet(Styles.PR_CARD)
 
     layout = QVBoxLayout(card)
     layout.setSpacing(4)

@@ -1,48 +1,55 @@
 class Colors:
-    # Background colors
-    BG_DARKEST = "#0d1117"    # Main window background
-    BG_DARKER = "#161b22"     # Section frame background
-    BG_DARK = "#21262d"       # Card background
-    BG_LIGHT = "#30363d"      # Button/input background
-    BG_LIGHTER = "#373e47"    # Button hover
+    # GitHub Dark Theme Colors (exact values from GitHub's CSS)
+    BG_DARKEST = "#0d1117"    # Canvas default (main background)
+    BG_DARKER = "#161b22"     # Surface overlay (section background)
+    BG_DARK = "#21262d"       # Surface primary (card background)
+    BG_LIGHT = "#30363d"      # Surface secondary (button background)
+    BG_LIGHTER = "#373e47"    # Surface tertiary (button hover)
 
     # Text colors
-    TEXT_PRIMARY = "#c9d1d9"
-    TEXT_SECONDARY = "#8b949e"
-    TEXT_LINK = "#58a6ff"
+    TEXT_PRIMARY = "#c9d1d9"   # Default text
+    TEXT_SECONDARY = "#8b949e" # Muted text
+    TEXT_LINK = "#58a6ff"      # Links and accents
 
     # Border colors
-    BORDER_DEFAULT = "#30363d"
-    BORDER_MUTED = "#21262d"
+    BORDER_DEFAULT = "#30363d" # Default borders
+    BORDER_MUTED = "#21262d"   # Muted borders
 
     # Status colors
-    SUCCESS = "#238636"
-    WARNING = "#9e6a03"
-    DANGER = "#da3633"
-    INFO = "#1f6feb"
+    SUCCESS = "#2ea043"        # Success
+    WARNING = "#d29922"        # Warning
+    DANGER = "#f85149"         # Danger
+    INFO = "#2f81f7"          # Info/Accent
 
     # Status colors with opacity
-    SUCCESS_BG = "rgba(35, 134, 54, 0.15)"
-    WARNING_BG = "rgba(158, 106, 3, 0.15)"
-    DANGER_BG = "rgba(218, 54, 51, 0.15)"
-    INFO_BG = "rgba(31, 111, 235, 0.15)"
+    SUCCESS_BG = "rgba(46, 160, 67, 0.15)"
+    WARNING_BG = "rgba(210, 153, 34, 0.15)"
+    DANGER_BG = "rgba(248, 81, 73, 0.15)"
+    INFO_BG = "rgba(47, 129, 247, 0.15)"
 
 class Styles:
     MAIN_WINDOW = f"""
         QMainWindow {{
             background-color: {Colors.BG_DARKEST};
+            color: {Colors.TEXT_PRIMARY};
+        }}
+        QWidget {{
+            color: {Colors.TEXT_PRIMARY};
         }}
     """
 
     SECTION_FRAME = f"""
         QFrame#sectionFrame {{
-            background-color: {Colors.BG_DARKER};
-            border-radius: 12px;
+            background-color: {Colors.BG_DARK};
+            border-radius: 6px;
             margin: 5px;
             border: 1px solid {Colors.BORDER_DEFAULT};
         }}
         QFrame {{
             background: transparent;
+        }}
+        QLabel {{
+            color: {Colors.TEXT_PRIMARY};
         }}
     """
 
@@ -50,12 +57,19 @@ class Styles:
         QFrame#prCard {{
             background-color: {Colors.BG_DARK};
             border: 1px solid {Colors.BORDER_DEFAULT};
-            border-radius: 12px;
+            border-radius: 6px;
             padding: 10px;
             margin: 3px 0;
         }}
         QFrame#prCard:hover {{
+            border-color: {Colors.TEXT_LINK};
             background-color: {Colors.BG_LIGHT};
+        }}
+        QLabel {{
+            color: {Colors.TEXT_PRIMARY};
+        }}
+        QLabel[link=true] {{
+            color: {Colors.TEXT_LINK};
         }}
     """
 
@@ -64,13 +78,15 @@ class Styles:
             background-color: {Colors.BG_LIGHT};
             border: 1px solid {Colors.BORDER_DEFAULT};
             border-radius: 6px;
-            padding: 5px 10px;
+            padding: 5px 16px;
             color: {Colors.TEXT_PRIMARY};
             font-size: 12px;
-            height: 25px;
+            height: 28px;
+            min-width: 70px;
         }}
         QPushButton:hover {{
             background-color: {Colors.BG_LIGHTER};
+            border-color: {Colors.TEXT_LINK};
         }}
     """
 
@@ -78,13 +94,17 @@ class Styles:
         QCheckBox {{
             color: {Colors.TEXT_PRIMARY};
             font-size: 12px;
+            spacing: 5px;
         }}
         QCheckBox::indicator {{
-            width: 13px;
-            height: 13px;
+            width: 16px;
+            height: 16px;
             border: 1px solid {Colors.BORDER_DEFAULT};
-            border-radius: 3px;
-            background: {Colors.BG_DARK};
+            border-radius: 6px;
+            background: {Colors.BG_DARKEST};
+        }}
+        QCheckBox::indicator:hover {{
+            border-color: {Colors.TEXT_LINK};
         }}
         QCheckBox::indicator:checked {{
             background: {Colors.INFO};
@@ -94,25 +114,39 @@ class Styles:
 
     COMBO_BOX = f"""
         QComboBox {{
-            background-color: {Colors.BG_DARK};
+            background-color: {Colors.BG_DARKEST};
             border: 1px solid {Colors.BORDER_DEFAULT};
             border-radius: 6px;
             color: {Colors.TEXT_PRIMARY};
-            padding: 3px 10px;
+            padding: 5px 10px;
             min-width: 200px;
             font-size: 12px;
         }}
         QComboBox:hover {{
-            background-color: {Colors.BG_LIGHT};
+            border-color: {Colors.TEXT_LINK};
         }}
         QComboBox::drop-down {{
             border: none;
+            width: 20px;
+        }}
+        QComboBox::down-arrow {{
+            image: none;
+            border: none;
         }}
         QComboBox QAbstractItemView {{
-            background-color: {Colors.BG_DARK};
+            background-color: {Colors.BG_DARKEST};
             border: 1px solid {Colors.BORDER_DEFAULT};
+            border-radius: 6px;
             color: {Colors.TEXT_PRIMARY};
-            selection-background-color: {Colors.BG_LIGHT};
+            selection-background-color: {Colors.BG_DARK};
+            outline: none;
+        }}
+        QComboBox QAbstractItemView::item {{
+            padding: 5px 10px;
+            min-height: 25px;
+        }}
+        QComboBox QAbstractItemView::item:hover {{
+            background-color: {Colors.BG_DARK};
         }}
     """
 
@@ -122,17 +156,61 @@ class Styles:
             background-color: transparent;
         }}
         QScrollBar:vertical {{
-            background: {Colors.BG_DARK};
-            width: 10px;
+            background: {Colors.BG_DARKEST};
+            width: 8px;
             margin: 0;
+            border-radius: 4px;
         }}
         QScrollBar::handle:vertical {{
             background: {Colors.BG_LIGHTER};
             min-height: 20px;
-            border-radius: 5px;
+            border-radius: 4px;
         }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical {{
             height: 0;
             background: none;
+        }}
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical {{
+            background: none;
+        }}
+    """
+
+    DIALOG = f"""
+        QDialog {{
+            background-color: {Colors.BG_DARKEST};
+            color: {Colors.TEXT_PRIMARY};
+        }}
+        QLabel {{
+            color: {Colors.TEXT_PRIMARY};
+        }}
+        QGroupBox {{
+            border: 1px solid {Colors.BORDER_DEFAULT};
+            border-radius: 6px;
+            margin-top: 1em;
+            padding-top: 1em;
+            color: {Colors.TEXT_PRIMARY};
+            background-color: {Colors.BG_DARK};
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 3px;
+            background-color: {Colors.BG_DARK};
+        }}
+        QTextEdit {{
+            background-color: {Colors.BG_DARKEST};
+            border: 1px solid {Colors.BORDER_DEFAULT};
+            border-radius: 6px;
+            color: {Colors.TEXT_PRIMARY};
+            padding: 5px;
+        }}
+        QSpinBox {{
+            background-color: {Colors.BG_DARKEST};
+            border: 1px solid {Colors.BORDER_DEFAULT};
+            border-radius: 6px;
+            color: {Colors.TEXT_PRIMARY};
+            padding: 5px;
         }}
     """ 
