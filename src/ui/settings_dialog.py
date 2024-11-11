@@ -13,14 +13,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.settings import get_settings
-
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, settings=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setMinimumWidth(400)
+        self.settings = settings
 
         layout = QVBoxLayout(self)
 
@@ -37,7 +36,7 @@ class SettingsDialog(QDialog):
 
         self.users_text = QTextEdit()
         self.users_text.setPlaceholderText("Enter GitHub usernames, one per line")
-        current_users = get_settings().get("users", [])
+        current_users = self.settings.get("users", [])
         self.users_text.setText("\n".join(current_users))
         users_group_layout.addWidget(self.users_text)
 
@@ -54,7 +53,7 @@ class SettingsDialog(QDialog):
 
         self.refresh_value = QSpinBox()
         self.refresh_value.setRange(1, 60)
-        current_refresh = get_settings().get("refresh", {})
+        current_refresh = self.settings.get("refresh", {})
         self.refresh_value.setValue(current_refresh.get("value", 30))
 
         self.refresh_unit = QComboBox()
@@ -81,7 +80,7 @@ class SettingsDialog(QDialog):
         files_group = QGroupBox("Files Changed Thresholds")
         files_layout = QFormLayout(files_group)
 
-        current_thresholds = get_settings().get("thresholds", {})
+        current_thresholds = self.settings.get("thresholds", {})
         files_thresholds = current_thresholds.get("files", {})
 
         self.files_warning = QSpinBox()
@@ -143,13 +142,12 @@ class SettingsDialog(QDialog):
         """Get current settings from dialog"""
         print("\nDebug - Getting settings from dialog")
         try:
-            settings = get_settings()  # Get existing settings instance
 
             # Update users
             users_text = self.users_text.toPlainText()
             users = [u.strip() for u in users_text.split("\n") if u.strip()]
             print(f"Debug - Users: {users}")
-            settings.set("users", users)
+            self.settings.set("users", users)
 
             # Update refresh settings
             refresh = {
@@ -157,7 +155,7 @@ class SettingsDialog(QDialog):
                 "unit": self.refresh_unit.currentText(),
             }
             print(f"Debug - Refresh settings: {refresh}")
-            settings.set("refresh", refresh)
+            self.settings.set("refresh", refresh)
 
             # Update thresholds
             thresholds = {
@@ -172,9 +170,9 @@ class SettingsDialog(QDialog):
                 "recently_closed_days": self.recent_threshold.value(),
             }
             print(f"Debug - Thresholds: {thresholds}")
-            settings.set("thresholds", thresholds)
+            self.settings.set("thresholds", thresholds)
 
-            return settings  # Return the Settings instance
+            return self.settings  # Return the Settings instance
 
         except Exception as e:
             print(f"Error getting settings from dialog: {e}")

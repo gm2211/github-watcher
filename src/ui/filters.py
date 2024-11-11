@@ -71,7 +71,7 @@ class FiltersBar(QWidget):
         self._update_filter_state()
 
     def _update_filter_state(self):
-        self.filtersState["selected_users"] = set(self.user_filter.currentData())
+        self.filtersState["selected_users"] = set(self.user_filter.currentData() or [])
         self.filtersChanged.emit()
 
     def get_filter_state(self):

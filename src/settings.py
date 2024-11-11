@@ -16,26 +16,32 @@ DEFAULT_SETTINGS = {
 
 
 class Settings:
-    def __init__(self, settings_file: str = "~/.github-pr-watcher.yml"):
-        self.settings_file = os.path.expanduser(settings_file)
-        self._settings = self.load()
+    def __init__(self, settings_path: str, settings: Dict[str, Any]):
+        self.settings_path = settings_path
+        self._settings = settings
 
-    def load(self) -> Dict[str, Any]:
-        """Load settings from YAML file"""
-        if os.path.exists(self.settings_file):
-            try:
-                with open(self.settings_file, "r") as f:
-                    loaded_settings = yaml.safe_load(f) or {}
-                    # Merge with defaults to ensure all required settings exist
-                    return {**DEFAULT_SETTINGS, **loaded_settings}
-            except Exception as e:
-                print(f"Error loading settings: {e}")
-        return DEFAULT_SETTINGS.copy()
+    @staticmethod
+    def load(settings_filename: str = "settings.yml") -> "Settings":
+        os.path.expanduser(os.path.join(os.path.dirname(__file__), settings_filename))
+        settings = Settings(settings_filename, DEFAULT_SETTINGS.copy())
+
+        if not os.path.exists(settings.settings_path):
+            return settings
+
+        try:
+            with open(settings.settings_path, "r") as f:
+                loaded_settings = yaml.safe_load(f) or {}
+                merged = {**DEFAULT_SETTINGS, **loaded_settings}
+                settings._settings = merged
+                return settings
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+            return settings
 
     def save(self):
         """Save current settings to YAML file"""
         try:
-            with open(self.settings_file, "w") as f:
+            with open(self.settings_path, "w") as f:
                 yaml.dump(self._settings, f)
         except Exception as e:
             print(f"Error saving settings: {e}")
@@ -58,15 +64,3 @@ class Settings:
     def all(self) -> Dict[str, Any]:
         """Get all settings"""
         return self._settings.copy()
-
-
-# Global settings instance
-_settings = None
-
-
-def get_settings():
-    """Get the global settings instance"""
-    global _settings
-    if _settings is None:
-        _settings = Settings()
-    return _settings

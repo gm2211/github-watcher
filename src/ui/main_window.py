@@ -18,24 +18,24 @@ from PyQt6.QtWidgets import (
 from src.github_auth import get_github_api_key
 from src.github_prs import GitHubPRs
 from src.notifications import notify
-from src.settings import get_settings
+from src.settings import Settings
 from src.ui.filters import FiltersBar
 from src.ui.pr_card import create_pr_card
 from src.ui.refresh_worker import RefreshWorker
 from src.ui.section_frame import SectionFrame
 from src.ui.settings_dialog import SettingsDialog
-from src.ui.state import UIState
 from src.ui.theme import Styles
 
 
 class PRWatcherUI(QMainWindow):
-    def __init__(self, state):
+    def __init__(self, state, settings: Settings):
         super().__init__()
+        self.state = state
+        self.settings = settings
         self.setWindowTitle("GitHub PR Watcher")
         self.setStyleSheet(Styles.MAIN_WINDOW)
         self.workers = []
         self.refresh_worker = None
-        self.state = state
 
         # Create central widget and main layout
         central_widget = QWidget()
@@ -149,7 +149,8 @@ class PRWatcherUI(QMainWindow):
         settings_btn.setStyleSheet(Styles.BUTTON)
         buttons_layout.addWidget(settings_btn)
 
-    def show_test_notification(self):
+    @staticmethod
+    def show_test_notification():
         """Show a test notification"""
         notify(
             "Test Notification", "This is a test notification from GitHub PR Watcher"
@@ -158,7 +159,7 @@ class PRWatcherUI(QMainWindow):
     def show_settings(self):
         """Show settings dialog"""
         try:
-            dialog = SettingsDialog(self)
+            dialog = SettingsDialog(self, self.settings)
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 settings = dialog.get_settings()
                 if settings:
@@ -174,7 +175,7 @@ class PRWatcherUI(QMainWindow):
                 return
 
             # Get current settings from the Settings instance
-            current_settings = get_settings()
+            current_settings = self.settings
 
             # Compare refresh settings
             old_refresh = current_settings.get("refresh", {})
@@ -531,7 +532,7 @@ def open_ui(
     app = QApplication([])
     app.setStyle("Fusion")
 
-    window = PRWatcherUI(state)
+    window = PRWatcherUI(state, settings)
     window.settings = settings
 
     # Use passed GitHubPRs instance or create new one

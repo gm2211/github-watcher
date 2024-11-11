@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import QApplication
 
 from src.github_auth import get_github_api_key
 from src.github_prs import GitHubPRs
-from src.settings import get_settings
+from src.settings import Settings
 from src.ui.main_window import open_ui
 from src.ui.state import UIState
 
@@ -45,11 +45,6 @@ def main():
 
         app.setWindowIcon(QIcon(get_resource_path("resources/AppIcon.icns")))
 
-    settings = get_settings()
-    users = settings.get("users", [])
-    if not users:
-        return app.exec()
-
     try:
         github_token = get_github_api_key()
         github_prs = GitHubPRs(
@@ -59,7 +54,7 @@ def main():
 
         # Load UI state
         ui_state = UIState.load()
-        settings = get_settings()
+        settings = Settings.load()
         window = open_ui(github_prs, ui_state, settings)
 
         # Schedule immediate refresh
