@@ -1,13 +1,15 @@
-import sys
 import os
-from PyQt6.QtWidgets import QApplication, QMessageBox
-from src.ui import open_ui
+import sys
+from datetime import timedelta
+
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication
+
 from src.github_auth import get_github_api_key
 from src.github_prs import GitHubPRs
-from datetime import timedelta
-from PyQt6.QtCore import QTimer
-from src.state import UIState
 from src.settings import get_settings
+from src.ui.main_window import open_ui
+from src.ui.state import UIState
 
 VERSION = "1.0.0"
 
@@ -46,7 +48,6 @@ def main():
     settings = get_settings()
     users = settings.get("users", [])
     if not users:
-        window = open_ui({}, {}, {}, {})
         return app.exec()
 
     try:
@@ -57,16 +58,10 @@ def main():
         )
 
         # Load UI state
-        ui_state = UIState()
-        initial_data = (
-            ui_state.get_pr_data("open")[0],
-            ui_state.get_pr_data("review")[0],
-            ui_state.get_pr_data("attention")[0],
-            ui_state.get_pr_data("closed")[0]
-        )
+        ui_state = UIState.load()
+        settings = get_settings()
+        window = open_ui(github_prs, ui_state, settings)
 
-        window = open_ui(*initial_data, github_prs=github_prs, settings=settings.all)
-        
         # Schedule immediate refresh
         QTimer.singleShot(0, window.refresh_data)
 
@@ -75,7 +70,6 @@ def main():
     except Exception as e:
         print(f"Error fetching PR data: {e}")
         print("Please check your GitHub token and internet connection.")
-        window = open_ui({}, {}, {}, {})
         return app.exec()
 
 

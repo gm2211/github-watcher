@@ -1,13 +1,15 @@
-from PyQt6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QLabel, 
-    QSizePolicy
-)
+import webbrowser
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
-import webbrowser
-from .theme import Colors, Styles
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout
 
-def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45, opacity=1.0):
+from .theme import Styles
+
+
+def create_badge(
+    text, bg_color, fg_color="white", parent=None, min_width=45, opacity=1.0
+):
     """Create a styled badge widget"""
     badge = QFrame(parent)
 
@@ -47,6 +49,7 @@ def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45, op
     layout.addWidget(label)
 
     return badge
+
 
 def create_changes_badge(additions, deletions, settings):
     """Create a badge showing additions and deletions with color gradient"""
@@ -96,6 +99,7 @@ def create_changes_badge(additions, deletions, settings):
 
     return changes_badge
 
+
 def get_changes_color(total_changes, settings):
     """Calculate gradient color based on number of changes"""
     warning_level = settings.get("thresholds", {}).get("lines", {}).get("warning", 500)
@@ -119,6 +123,7 @@ def get_changes_color(total_changes, settings):
             )
     else:
         return "rgba(220, 53, 69, 0.5)"  # Red with 0.5 opacity
+
 
 def create_pr_card(pr_data, settings, parent=None):
     """Create a card widget for a pull request"""
@@ -154,8 +159,10 @@ def create_pr_card(pr_data, settings, parent=None):
     title.setWordWrap(True)
 
     if url := getattr(pr_data, "html_url", None):
+
         def open_url(event):
             webbrowser.open(url)
+
         title.mousePressEvent = open_url
 
     top_row.addWidget(title)
@@ -176,7 +183,9 @@ def create_pr_card(pr_data, settings, parent=None):
     # Files badge
     files_count = getattr(pr_data, "changed_files", 0) or 0
     if files_count > 0:
-        files_warning = settings.get("thresholds", {}).get("files", {}).get("warning", 10)
+        files_warning = (
+            settings.get("thresholds", {}).get("files", {}).get("warning", 10)
+        )
         files_danger = settings.get("thresholds", {}).get("files", {}).get("danger", 50)
 
         if files_count >= files_danger:
@@ -186,9 +195,7 @@ def create_pr_card(pr_data, settings, parent=None):
         else:
             badge_color = "#28a745"  # Green
 
-        files_badge = create_badge(
-            f"{files_count} files", badge_color, opacity=0.5
-        )
+        files_badge = create_badge(f"{files_count} files", badge_color, opacity=0.5)
         badges_layout.addWidget(files_badge)
 
     # Changes badge
@@ -207,4 +214,4 @@ def create_pr_card(pr_data, settings, parent=None):
     header.addLayout(badges_layout)
     layout.addLayout(header)
 
-    return card 
+    return card

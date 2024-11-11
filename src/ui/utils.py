@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel
+
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel
+
 
 def format_time_diff(dt_str: str) -> str:
     """Format a datetime string into a human-readable time difference"""
@@ -9,8 +11,8 @@ def format_time_diff(dt_str: str) -> str:
             return ""
 
         # Parse the datetime string
-        dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
-        
+        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+
         # Calculate time difference
         now = datetime.now(timezone.utc)
         diff = now - dt
@@ -34,7 +36,10 @@ def format_time_diff(dt_str: str) -> str:
         print(f"Error formatting time difference: {e}")
         return ""
 
-def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45, opacity=1.0):
+
+def create_badge(
+    text, bg_color, fg_color="white", parent=None, min_width=45, opacity=1.0
+):
     """Create a styled badge widget"""
     badge = QFrame(parent)
 
@@ -73,4 +78,4 @@ def create_badge(text, bg_color, fg_color="white", parent=None, min_width=45, op
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     layout.addWidget(label)
 
-    return badge 
+    return badge

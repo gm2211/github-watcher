@@ -1,18 +1,21 @@
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QCheckBox
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QWidget
 
 from .combo_box import MultiSelectComboBox
 from .theme import Colors, Styles
+
 
 class FiltersBar(QWidget):
     filtersChanged = pyqtSignal()  # Signal when any filter changes
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("filtersBar")
+        self.setStyleSheet(Styles.FILTERS)
         self.filtersState = {
             "show_drafts": True,
             "group_by_user": False,
-            "selected_users": {"All Authors"}
+            "selected_users": {"All Authors"},
         }
         self._setup_ui()
 
@@ -23,7 +26,7 @@ class FiltersBar(QWidget):
     def _setup_ui(self):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        
+
         # Show drafts toggle
         self.show_drafts_toggle = QCheckBox("Show Drafts")
         self.show_drafts_toggle.setChecked(True)
@@ -44,7 +47,9 @@ class FiltersBar(QWidget):
         user_filter_layout.setSpacing(5)
 
         user_filter_label = QLabel("Filter by Author:")
-        user_filter_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; font-size: 12px;")
+        user_filter_label.setStyleSheet(
+            f"color: {Colors.TEXT_PRIMARY}; font-size: 12px;"
+        )
         user_filter_layout.addWidget(user_filter_label)
 
         # Initialize MultiSelectComboBox with multi-select enabled
@@ -74,9 +79,9 @@ class FiltersBar(QWidget):
         selected_users = self.user_filter.getSelectedItems()
         print(f"Debug - Selected users: {selected_users}")
         return {
-            'show_drafts': self.filtersState["show_drafts"],
-            'group_by_user': self.filtersState["group_by_user"],
-            'selected_users': selected_users
+            "show_drafts": self.filtersState["show_drafts"],
+            "group_by_user": self.filtersState["group_by_user"],
+            "selected_users": selected_users,
         }
 
     def update_user_filter(self, users):
@@ -85,7 +90,7 @@ class FiltersBar(QWidget):
         try:
             # Clear existing items
             self.user_filter.clear()
-            
+
             # Start with "All Authors"
             items = ["All Authors"]
             # Add users if provided
@@ -93,9 +98,9 @@ class FiltersBar(QWidget):
                 items.extend(sorted(users))
             print(f"Debug - Filter items: {items}")
             self.user_filter.addItems(items)
-            
+
             # Select "All Authors" by default
             self.user_filter.setCurrentText("All Authors")
-            
+
         except Exception as e:
             print(f"Error updating user filter: {e}")

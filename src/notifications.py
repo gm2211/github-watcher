@@ -1,4 +1,5 @@
 import atexit
+
 from PyQt6.QtCore import QProcess
 
 NOTIFIER_APP = "gh_notify"

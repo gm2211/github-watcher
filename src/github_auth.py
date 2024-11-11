@@ -1,8 +1,9 @@
 import subprocess
-import webbrowser
 import sys
+import webbrowser
 from urllib.parse import urlencode
-from PyQt6.QtWidgets import QMessageBox, QInputDialog
+
+from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
 KEYCHAIN_SERVICE = "github_api_key"
 KEYCHAIN_ACCOUNT = "token"

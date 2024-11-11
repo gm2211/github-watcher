@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
@@ -314,11 +314,7 @@ class PullRequest:
                 "html_url": self.html_url,
                 "repo_owner": self.repo_owner,
                 "repo_name": self.repo_name,
-                "timeline": (
-                    [event.to_dict() for event in self.timeline]
-                    if self.timeline
-                    else None
-                ),
+                "timeline": [event.to_dict() for event in self.timeline] if self.timeline else None,
                 "changed_files": self.changed_files,
                 "additions": self.additions,
                 "deletions": self.deletions,
@@ -361,38 +357,22 @@ class PullRequest:
             timeline = None
             if timeline_data := pr_data.get("timeline"):
                 print(f"Debug - Processing timeline with {len(timeline_data)} events")
-                timeline = [
-                    TimelineEvent.from_dict(event) for event in timeline_data if event
-                ]
+                timeline = [TimelineEvent.from_dict(event) for event in timeline_data if event]
 
-            # Handle datetime strings or datetime objects for dates
-            def parse_date(date_val):
-                print(
-                    f"Debug - parse_date called with: {date_val} (type: {type(date_val)})"
-                )
-                if date_val is None:
-                    return None
-                if isinstance(date_val, datetime):
-                    result = date_val.isoformat()
-                    print(f"Debug - Converted datetime to ISO: {result}")
-                    return result
-                if isinstance(date_val, str):
-                    print(f"Debug - Using existing string: {date_val}")
-                    return date_val
-                result = str(date_val)
-                print(f"Debug - Converted other type to string: {result}")
-                return result
+            # Ensure required fields exist
+            if "state" not in pr_data:
+                pr_data["state"] = "unknown"  # Provide a default state
 
             pr = PullRequest(
                 id=pr_data["id"],
                 number=pr_data["number"],
                 title=pr_data["title"],
                 state=pr_data["state"],
-                created_at=parse_date(pr_data["created_at"]),
-                updated_at=parse_date(pr_data["updated_at"]),
-                closed_at=parse_date(pr_data.get("closed_at")),
-                merged_at=parse_date(pr_data.get("merged_at")),
-                draft=pr_data["draft"],
+                created_at=pr_data["created_at"],
+                updated_at=pr_data["updated_at"],
+                closed_at=pr_data.get("closed_at"),
+                merged_at=pr_data.get("merged_at"),
+                draft=pr_data.get("draft", False),  # Default to False if not present
                 user=User.parse(pr_data["user"]),
                 html_url=pr_data["html_url"],
                 repo_owner=pr_data["repo_owner"],

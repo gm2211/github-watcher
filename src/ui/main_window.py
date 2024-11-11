@@ -1,60 +1,101 @@
 import traceback
-from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QPushButton, QLabel, QScrollArea, QSizePolicy,
-    QMessageBox, QApplication, QDialog
-)
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
 from datetime import timedelta
+
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from src.github_auth import get_github_api_key
 from src.github_prs import GitHubPRs
-from src.settings import get_settings
 from src.notifications import notify
-from src.state import UIState
+from src.settings import get_settings
+from src.ui.filters import FiltersBar
+from src.ui.pr_card import create_pr_card
+from src.ui.refresh_worker import RefreshWorker
+from src.ui.section_frame import SectionFrame
+from src.ui.settings_dialog import SettingsDialog
+from src.ui.state import UIState
+from src.ui.theme import Styles
 
-from .section_frame import SectionFrame
-from .settings_dialog import SettingsDialog
-from .refresh_worker import RefreshWorker
-from .filters import FiltersBar
-from .pr_card import create_pr_card
-from .theme import Colors, Styles
 
 class PRWatcherUI(QMainWindow):
-    def __init__(self):
+    def __init__(self, state):
         super().__init__()
         self.setWindowTitle("GitHub PR Watcher")
         self.setStyleSheet(Styles.MAIN_WINDOW)
         self.workers = []
         self.refresh_worker = None
-
-        # Initialize state first
-        from src.state import UIState
-        self.state = UIState()
+        self.state = state
 
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        self.main_layout = QVBoxLayout(central_widget)
+        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        self.main_layout.setSpacing(10)
 
         # Create section frames first
-        self.needs_review_frame = SectionFrame("Needs Review")
-        self.changes_requested_frame = SectionFrame("Changes Requested")
-        self.open_prs_frame = SectionFrame("Open PRs")
-        self.recently_closed_frame = SectionFrame("Recently Closed")
+        self.needs_review_frame = SectionFrame("Needs Review", self.state)
+        self.changes_requested_frame = SectionFrame("Changes Requested", self.state)
+        self.open_prs_frame = SectionFrame("Open PRs", self.state)
+        self.recently_closed_frame = SectionFrame("Recently Closed", self.state)
 
-        # Create header with buttons
-        header_layout = QHBoxLayout()
-        self._setup_header(header_layout)
-        main_layout.addLayout(header_layout)
+        # Create header with buttons and filters
+        header_container = QWidget()
+        header_container.setObjectName("headerContainer")
+        header_container.setStyleSheet(Styles.HEADER)
+
+        # Create a vertical layout for header + filters
+        header_vertical = QVBoxLayout(header_container)
+        header_vertical.setContentsMargins(0, 0, 0, 0)
+        header_vertical.setSpacing(0)
+
+        # Header content
+        header_content = QWidget()
+        header_layout = QHBoxLayout(header_content)
+        header_layout.setContentsMargins(16, 16, 16, 16)
+
+        # Left side: loading indicator and title
+        left_layout = QHBoxLayout()
+
+        # Loading indicator
+        self.loading_label = QLabel("Loading...")
+        self.loading_label.setObjectName("loadingLabel")
+        self.loading_label.hide()
+        left_layout.addWidget(self.loading_label)
+
+        # Title
+        title = QLabel("GitHub PR Watcher")
+        title.setObjectName("headerTitle")
+        left_layout.addWidget(title)
+
+        header_layout.addLayout(left_layout)
+        header_layout.addStretch()
+
+        # Buttons container
+        buttons_layout = QHBoxLayout()
+        self._setup_buttons(buttons_layout)
+        header_layout.addLayout(buttons_layout)
+
+        # Add header content to vertical layout
+        header_vertical.addWidget(header_content)
 
         # Create filters
         self.filters = FiltersBar()
         self.filters.filtersChanged.connect(self.apply_filters)
-        main_layout.addWidget(self.filters)
+        header_vertical.addWidget(self.filters)
+
+        self.main_layout.addWidget(header_container)
 
         # Create scroll area for sections
         scroll_area = QScrollArea()
@@ -74,52 +115,16 @@ class PRWatcherUI(QMainWindow):
         scroll_layout.addWidget(self.recently_closed_frame, 1)
 
         scroll_area.setWidget(scroll_widget)
-        main_layout.addWidget(scroll_area, 1)
+        self.main_layout.addWidget(scroll_area, 1)
 
         # Load and display saved PR data
-        open_prs, _ = self.state.get_pr_data('open')
-        needs_review, _ = self.state.get_pr_data('review')
-        changes_requested, _ = self.state.get_pr_data('attention')
-        recently_closed, _ = self.state.get_pr_data('closed')
+        open_prs, _ = self.state.get_pr_data("open")
+        needs_review, _ = self.state.get_pr_data("review")
+        changes_requested, _ = self.state.get_pr_data("attention")
+        recently_closed, _ = self.state.get_pr_data("closed")
 
         # Update UI with saved data
-        self.update_pr_lists(
-            open_prs,
-            needs_review,
-            changes_requested,
-            recently_closed
-        )
-
-    def _setup_header(self, header_layout):
-        """Setup the header section with title and buttons"""
-        # Left side: loading indicator and title
-        left_layout = QHBoxLayout()
-
-        # Loading indicator
-        self.loading_label = QLabel("Loading...")
-        self.loading_label.setStyleSheet(f"""
-            QLabel {{
-                color: {Colors.INFO};
-                font-size: 12px;
-                padding: 0 5px;
-            }}
-        """)
-        self.loading_label.hide()
-        left_layout.addWidget(self.loading_label)
-
-        # Title
-        title = QLabel("GitHub PR Watcher")
-        title.setFont(QFont("", 16, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
-        left_layout.addWidget(title)
-
-        header_layout.addLayout(left_layout)
-        header_layout.addStretch()
-
-        # Buttons container
-        buttons_layout = QHBoxLayout()
-        self._setup_buttons(buttons_layout)
-        header_layout.addLayout(buttons_layout)
+        self.update_pr_lists(open_prs, needs_review, changes_requested, recently_closed)
 
     def _setup_buttons(self, buttons_layout):
         """Setup the header buttons"""
@@ -146,7 +151,9 @@ class PRWatcherUI(QMainWindow):
 
     def show_test_notification(self):
         """Show a test notification"""
-        notify("Test Notification", "This is a test notification from GitHub PR Watcher")
+        notify(
+            "Test Notification", "This is a test notification from GitHub PR Watcher"
+        )
 
     def show_settings(self):
         """Show settings dialog"""
@@ -168,7 +175,7 @@ class PRWatcherUI(QMainWindow):
 
             # Get current settings from the Settings instance
             current_settings = get_settings()
-            
+
             # Compare refresh settings
             old_refresh = current_settings.get("refresh", {})
             new_refresh = new_settings.get("refresh", {})
@@ -191,7 +198,13 @@ class PRWatcherUI(QMainWindow):
             traceback.print_exc()  # Print full stack trace for debugging
             QMessageBox.critical(self, "Error", f"Failed to apply settings: {str(e)}")
 
-    def apply_filters(self, open_prs=None, needs_review=None, needs_attention=None, recently_closed=None):
+    def apply_filters(
+        self,
+        open_prs=None,
+        needs_review=None,
+        needs_attention=None,
+        recently_closed=None,
+    ):
         """Apply filters to PR lists"""
         print("\nDebug - Applying filters")
         try:
@@ -203,13 +216,15 @@ class PRWatcherUI(QMainWindow):
                 ("Open PRs", self.open_prs_frame, open_prs),
                 ("Needs Review", self.needs_review_frame, needs_review),
                 ("Changes Requested", self.changes_requested_frame, needs_attention),
-                ("Recently Closed", self.recently_closed_frame, recently_closed)
+                ("Recently Closed", self.recently_closed_frame, recently_closed),
             ]
 
             for title, frame, data in sections:
                 print(f"\nDebug - Updating section: {title}")
                 if data is not None:
-                    self._update_section(frame, data, filter_state)  # Pass filter_state here
+                    self._update_section(
+                        frame, data, filter_state
+                    )  # Pass filter_state here
         except Exception as e:
             print(f"Error applying filters: {e}")
             traceback.print_exc()
@@ -218,7 +233,10 @@ class PRWatcherUI(QMainWindow):
         """Filter PRs based on the filter state"""
         filtered_prs = []
         for user, prs in pr_data.items():
-            if "All Authors" not in filter_state["selected_users"] and user not in filter_state["selected_users"]:
+            if (
+                "All Authors" not in filter_state["selected_users"]
+                and user not in filter_state["selected_users"]
+            ):
                 continue
             for pr in prs:
                 # Apply draft filter
@@ -241,7 +259,10 @@ class PRWatcherUI(QMainWindow):
             # Filter and group PRs
             filtered_prs = []
             for user, prs in pr_data.items():
-                if "All Authors" not in filter_state["selected_users"] and user not in filter_state["selected_users"]:
+                if (
+                    "All Authors" not in filter_state["selected_users"]
+                    and user not in filter_state["selected_users"]
+                ):
                     continue
                 for pr in prs:
                     # Apply draft filter
@@ -272,7 +293,11 @@ class PRWatcherUI(QMainWindow):
 
     def refresh_data(self):
         """Refresh PR data"""
-        if hasattr(self, "refresh_worker") and self.refresh_worker and self.refresh_worker.isRunning():
+        if (
+            hasattr(self, "refresh_worker")
+            and self.refresh_worker
+            and self.refresh_worker.isRunning()
+        ):
             print("Debug - Refresh already in progress")
             return
 
@@ -288,7 +313,6 @@ class PRWatcherUI(QMainWindow):
             self.workers.append(self.refresh_worker)
             self.refresh_worker.start()
 
-            # Show loading state
             self._show_loading_state()
 
         except Exception as e:
@@ -315,24 +339,22 @@ class PRWatcherUI(QMainWindow):
 
         # Save UI state after updating lists
         try:
-            from src.state import UIState
-            state = UIState()
             print("\nDebug - Saving UI state after updating lists")
-            
+
             for section in [
                 ("Needs Review", self.needs_review_frame),
                 ("Changes Requested", self.changes_requested_frame),
                 ("Open PRs", self.open_prs_frame),
-                ("Recently Closed", self.recently_closed_frame)
+                ("Recently Closed", self.recently_closed_frame),
             ]:
                 title, frame = section
                 key = f"section_{title}_expanded"
-                state.state[key] = frame.is_expanded
+                self.state.settings[key] = frame.is_expanded
                 print(f"Debug - Saving {key}={frame.is_expanded}")
-            
-            state.save()
+
+            self.state.save()
             print("Debug - UI state saved successfully")
-            
+
         except Exception as e:
             print(f"Error saving UI state: {e}")
             traceback.print_exc()
@@ -366,27 +388,23 @@ class PRWatcherUI(QMainWindow):
         print("\nDebug - Refresh complete")
         try:
             self._hide_loading_state()
-            
-            # Save PR data to state
-            from src.state import UIState
-            state = UIState()
-            
+
             # Unpack data tuple
             open_prs, needs_review, changes_requested, recently_closed = data
-            
+
             # Save each section's data
-            state.update_pr_data('open', open_prs)
-            state.update_pr_data('review', needs_review)
-            state.update_pr_data('attention', changes_requested)
-            state.update_pr_data('closed', recently_closed)
-            
+            self.state.update_pr_data("open", open_prs)
+            self.state.update_pr_data("review", needs_review)
+            self.state.update_pr_data("attention", changes_requested)
+            self.state.update_pr_data("closed", recently_closed)
+
             # Update UI
             self.update_pr_lists(*data)
-            
+
             if self.refresh_worker in self.workers:
                 self.workers.remove(self.refresh_worker)
             self.refresh_worker = None
-            
+
         except Exception as e:
             print(f"Error handling refresh completion: {e}")
             traceback.print_exc()
@@ -404,7 +422,9 @@ class PRWatcherUI(QMainWindow):
         """Setup the refresh timer"""
         try:
             if not refresh_settings:
-                refresh_settings = self.settings.get("refresh", {"value": 30, "unit": "seconds"})
+                refresh_settings = self.settings.get(
+                    "refresh", {"value": 30, "unit": "seconds"}
+                )
 
             value = refresh_settings.get("value", 30)
             unit = refresh_settings.get("unit", "seconds")
@@ -417,7 +437,9 @@ class PRWatcherUI(QMainWindow):
             else:  # hours
                 interval = value * 60 * 60 * 1000
 
-            print(f"Debug - Setting up refresh timer with interval: {interval}ms ({value} {unit})")
+            print(
+                f"Debug - Setting up refresh timer with interval: {interval}ms ({value} {unit})"
+            )
 
             # Stop existing timer if it exists
             if hasattr(self, "auto_refresh_timer"):
@@ -449,7 +471,7 @@ class PRWatcherUI(QMainWindow):
             # Calculate interval
             value = refresh_settings.get("value", 30)
             unit = refresh_settings.get("unit", "seconds")
-            
+
             if unit == "seconds":
                 interval = value * 1000
             elif unit == "minutes":
@@ -475,23 +497,21 @@ class PRWatcherUI(QMainWindow):
 
         # Save UI state after refresh
         try:
-            from src.state import UIState
-            state = UIState()
             for section in [
                 ("Needs Review", self.needs_review_frame),
                 ("Changes Requested", self.changes_requested_frame),
                 ("Open PRs", self.open_prs_frame),
-                ("Recently Closed", self.recently_closed_frame)
+                ("Recently Closed", self.recently_closed_frame),
             ]:
                 title, frame = section
                 key = f"section_{title}_expanded"
-                state.state[key] = frame.is_expanded
-            
+                self.state.settings[key] = frame.is_expanded
+
             print("\nDebug - Saving UI state after refresh")
-            print(f"Debug - State before save: {state.state}")
-            state.save()
+            print(f"Debug - State before save: {self.state.settings}")
+            self.state.save()
             print("Debug - UI state saved successfully")
-            
+
         except Exception as e:
             print(f"Error saving UI state: {e}")
             traceback.print_exc()
@@ -502,22 +522,16 @@ class PRWatcherUI(QMainWindow):
         # Schedule refresh after window is shown
         QTimer.singleShot(0, self.refresh_data)
 
+
 def open_ui(
-    open_prs_by_user,
-    prs_awaiting_review_by_user,
-    prs_that_need_attention_by_user,
-    user_recently_closed_prs_by_user,
     github_prs=None,
+    state=None,
     settings=None,
 ):
     app = QApplication([])
     app.setStyle("Fusion")
 
-    window = PRWatcherUI()
-
-    # Use passed settings or load them
-    if settings is None:
-        settings = get_settings()
+    window = PRWatcherUI(state)
     window.settings = settings
 
     # Use passed GitHubPRs instance or create new one
@@ -533,20 +547,16 @@ def open_ui(
     window.update_user_filter()
 
     # Load saved state and update UI before showing window
-    state = UIState()
-    open_prs, _ = state.get_pr_data('open')
-    needs_review, _ = state.get_pr_data('review')
-    changes_requested, _ = state.get_pr_data('attention')
-    recently_closed, _ = state.get_pr_data('closed')
+    open_prs, _ = window.state.get_pr_data("open")
+    needs_review, _ = window.state.get_pr_data("review")
+    changes_requested, _ = window.state.get_pr_data("attention")
+    recently_closed, _ = window.state.get_pr_data("closed")
 
     # Update UI with saved data
     if any([open_prs, needs_review, changes_requested, recently_closed]):
         print("\nDebug - Loading saved PR data")
         window.update_pr_lists(
-            open_prs,
-            needs_review,
-            changes_requested,
-            recently_closed
+            open_prs, needs_review, changes_requested, recently_closed
         )
 
     # Initialize refresh timer with current settings
@@ -557,4 +567,4 @@ def open_ui(
     # Schedule refresh after window is shown
     QTimer.singleShot(0, window.refresh_data)
 
-    return app.exec() 
+    return app.exec()

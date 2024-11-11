@@ -1,12 +1,14 @@
-import re
-import requests
 import traceback
-from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
-from src.objects import PRState, PullRequest, TimelineEvent, TimelineEventType
+from datetime import datetime, timedelta
+
+import requests
+
 from src.notifications import notify
+from src.objects import PullRequest, TimelineEvent
 
 DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
+
 
 class GitHubPRs:
     def __init__(
@@ -45,86 +47,109 @@ class GitHubPRs:
 
         return events
 
+    def _fetch_user_prs(self, user, query, max_results):
+        """Helper method to fetch PRs for a single user"""
+        try:
+            user_query = f"{query} author:{user}"
+            results = self._search_issues(user_query, max_results)
+            return user, results
+        except Exception as e:
+            print(f"Error fetching PRs for user {user}: {e}")
+            return user, []
+
     def _search_issues(self, query, max_results=None) -> list[PullRequest]:
         """Search issues and pull requests using the given query."""
         endpoint = "/search/issues"
         params = {"q": query, "per_page": 100}
         results = []
 
-        while True:
-            response = requests.get(
-                f"{self.base_url}{endpoint}", headers=self.headers, params=params
-            )
-            response.raise_for_status()
-            data = response.json()
+        try:
+            while True:
+                response = requests.get(
+                    f"{self.base_url}{endpoint}", headers=self.headers, params=params
+                )
+                response.raise_for_status()
+                data = response.json()
 
-            print(f"\nDebug - Processing {len(data['items'])} items from GitHub API")
+                print(
+                    f"\nDebug - Processing {len(data['items'])} items from GitHub API"
+                )
 
-            # Process each PR item
-            for item in data["items"]:
-                try:
-                    # Extract repo owner and name from repository_url or html_url
-                    if "repository_url" in item:
-                        repo_parts = item["repository_url"].split("/")
-                        repo_owner = repo_parts[-2]
-                        repo_name = repo_parts[-1]
-                    else:
-                        repo_parts = item["html_url"].split("/")
-                        repo_owner = repo_parts[-4]
-                        repo_name = repo_parts[-3]
+                # Process each PR item
+                for item in data["items"]:
+                    try:
+                        # Extract repo owner and name from repository_url or html_url
+                        if "repository_url" in item:
+                            repo_parts = item["repository_url"].split("/")
+                            repo_owner = repo_parts[-2]
+                            repo_name = repo_parts[-1]
+                        else:
+                            repo_parts = item["html_url"].split("/")
+                            repo_owner = repo_parts[-4]
+                            repo_name = repo_parts[-3]
 
-                    print(
-                        f"\nDebug - Processing PR #{item.get('number')} from {repo_owner}/{repo_name}"
-                    )
+                        print(
+                            f"\nDebug - Processing PR #{item.get('number')} from {repo_owner}/{repo_name}"
+                        )
 
-                    # Add repo info to item
-                    item["repo_owner"] = repo_owner
-                    item["repo_name"] = repo_name
+                        # Add repo info to item
+                        item["repo_owner"] = repo_owner
+                        item["repo_name"] = repo_name
 
-                    # Convert datetime strings to proper format
-                    for date_field in [
-                        "created_at",
-                        "updated_at",
-                        "closed_at",
-                        "merged_at",
-                    ]:
-                        if date_val := item.get(date_field):
-                            try:
-                                if isinstance(date_val, str):
-                                    if date_val.endswith("Z"):
-                                        date_val = date_val[:-1] + "+00:00"
-                                    item[date_field] = date_val
-                                elif isinstance(date_val, datetime):
-                                    item[date_field] = date_val.isoformat()
-                                else:
-                                    item[date_field] = str(date_val)
-                            except Exception as e:
-                                print(
-                                    f"Warning: Error parsing date {date_field}: {e} (value: {date_val}, type: {type(date_val)})"
-                                )
-                                item[date_field] = None
+                        # Ensure state is present
+                        if "state" not in item:
+                            item["state"] = "unknown"
 
-                    # Parse PR
-                    print(f"Debug - Attempting to parse PR with data: {item}")
-                    pr = PullRequest.parse_pr(item)
-                    results.append(pr)
-                    print(f"Debug - Successfully parsed PR #{pr.number}")
+                        # Convert datetime strings to proper format
+                        for date_field in [
+                            "created_at",
+                            "updated_at",
+                            "closed_at",
+                            "merged_at",
+                        ]:
+                            if date_val := item.get(date_field):
+                                try:
+                                    if isinstance(date_val, str):
+                                        if date_val.endswith("Z"):
+                                            date_val = date_val[:-1] + "+00:00"
+                                        item[date_field] = date_val
+                                    elif isinstance(date_val, datetime):
+                                        item[date_field] = date_val.isoformat()
+                                    else:
+                                        item[date_field] = str(date_val)
+                                except Exception as e:
+                                    print(
+                                        f"Warning: Error parsing date {date_field}: {e} "
+                                        f"(value: {date_val},"
+                                        f" type: {type(date_val)})"
+                                    )
+                                    item[date_field] = None
 
-                except Exception as e:
-                    print(f"Warning: Error parsing PR item: {e}")
-                    print(f"Item data: {item}")
-                    continue
+                        # Parse PR
+                        print(f"Debug - Attempting to parse PR with data: {item}")
+                        pr = PullRequest.parse_pr(item)
+                        results.append(pr)
+                        print(f"Debug - Successfully parsed PR #{pr.number}")
 
-            if max_results and len(results) >= max_results:
-                results = results[:max_results]
-                break
+                    except Exception as e:
+                        print(f"Warning: Error parsing PR item: {e}")
+                        print(f"Item data: {item}")
+                        continue
 
-            if "next" not in response.links:
-                break
+                if max_results and len(results) >= max_results:
+                    results = results[:max_results]
+                    break
 
-            params["page"] = response.links["next"]["url"].split("page=")[-1]
+                if "next" not in response.links:
+                    break
 
-        return results
+                params["page"] = response.links["next"]["url"].split("page=")[-1]
+
+            return results
+
+        except Exception as e:
+            print(f"Error in _search_issues: {e}")
+            return []
 
     def get_pr_details(self, repo_owner, repo_name, pr_number):
         """Get detailed PR information including file changes"""
@@ -159,12 +184,6 @@ class GitHubPRs:
 
         return data
 
-    def _fetch_user_prs(self, user, query, max_results):
-        """Helper method to fetch PRs for a single user"""
-        user_query = f"{query} author:{user}"
-        results = self._search_issues(user_query, max_results)
-        return user, results
-
     def _fetch_pr_details(self, pr):
         """Helper method to fetch details for a single PR"""
         try:
@@ -178,13 +197,13 @@ class GitHubPRs:
             print(f"Warning: Error fetching details for PR #{pr.number}: {e}")
             return pr
 
-    def get_pr_data(self, users, force_refresh=False, section=None):
+    def get_pr_data(self, users, section=None):
         """Get PR data from GitHub API with parallel processing"""
         try:
             # Define section-specific queries
             section_queries = {
                 "open": "is:pr is:open",
-                "review": ("is:pr is:open " "review:none " "comments:0 " "-draft:true"),
+                "review": "is:pr is:open " "review:none " "comments:0 " "-draft:true",
                 "attention": (
                     "is:pr is:open " "review:changes_requested " "-draft:true"
                 ),
@@ -241,7 +260,7 @@ class GitHubPRs:
 
                 print("\nDebug - Final results:")
                 print(f"Open PRs: {len(results.get('open', {}))} users")
-                for user, prs in results.get('open', {}).items():
+                for user, prs in results.get("open", {}).items():
                     print(f"  {user}: {len(prs)} PRs")
                 print(f"Review PRs: {len(results.get('review', {}))} users")
                 print(f"Attention PRs: {len(results.get('attention', {}))} users")
@@ -252,7 +271,7 @@ class GitHubPRs:
         except Exception as e:
             print(f"Error in get_pr_data: {e}")
             traceback.print_exc()
-            return ({}, {}, {}, {})  # Return empty dicts on error
+            return {}, {}, {}, {}  # Return empty dicts on error
 
     def _recent_date(self):
         """Get the date threshold for recently closed PRs"""

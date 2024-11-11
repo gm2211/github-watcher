@@ -1,9 +1,20 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QWidget, QTabWidget,
-    QGroupBox, QTextEdit, QFormLayout, QSpinBox, QComboBox,
-    QDialogButtonBox, QMessageBox
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QMessageBox,
+    QSpinBox,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
+
 from src.settings import get_settings
+
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -45,7 +56,7 @@ class SettingsDialog(QDialog):
         self.refresh_value.setRange(1, 60)
         current_refresh = get_settings().get("refresh", {})
         self.refresh_value.setValue(current_refresh.get("value", 30))
-        
+
         self.refresh_unit = QComboBox()
         self.refresh_unit.addItems(["seconds", "minutes", "hours"])
         current_unit = current_refresh.get("unit", "seconds")
@@ -109,7 +120,9 @@ class SettingsDialog(QDialog):
 
         self.recent_threshold = QSpinBox()
         self.recent_threshold.setRange(1, 30)
-        self.recent_threshold.setValue(current_thresholds.get("recently_closed_days", 7))
+        self.recent_threshold.setValue(
+            current_thresholds.get("recently_closed_days", 7)
+        )
         recent_layout.addRow("Show PRs closed within (days):", self.recent_threshold)
 
         thresholds_layout.addWidget(recent_group)
@@ -141,7 +154,7 @@ class SettingsDialog(QDialog):
             # Update refresh settings
             refresh = {
                 "value": self.refresh_value.value(),
-                "unit": self.refresh_unit.currentText()
+                "unit": self.refresh_unit.currentText(),
             }
             print(f"Debug - Refresh settings: {refresh}")
             settings.set("refresh", refresh)

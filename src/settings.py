@@ -1,25 +1,19 @@
 import os
+from typing import Any, Dict
+
 import yaml
-from typing import Dict, Any
 
 DEFAULT_SETTINGS = {
     "users": [],
-    "refresh": {
-        "value": 30,
-        "unit": "seconds"
-    },
+    "refresh": {"value": 30, "unit": "seconds"},
     "thresholds": {
-        "files": {
-            "warning": 10,
-            "danger": 50
-        },
-        "lines": {
-            "warning": 500,
-            "danger": 1000
-        },
-        "recently_closed_days": 7
-    }
+        "files": {"warning": 10, "danger": 50},
+        "additions": {"warning": 500, "danger": 1000},
+        "deletions": {"warning": 2000, "danger": 5000},
+        "recently_closed_days": 7,
+    },
 }
+
 
 class Settings:
     def __init__(self, settings_file: str = "~/.github-pr-watcher.yml"):
@@ -65,8 +59,10 @@ class Settings:
         """Get all settings"""
         return self._settings.copy()
 
+
 # Global settings instance
 _settings = None
+
 
 def get_settings():
     """Get the global settings instance"""

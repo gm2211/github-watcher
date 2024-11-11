@@ -1,4 +1,5 @@
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QThread
+
 
 class RefreshWorker(QThread):
     finished = pyqtSignal(tuple)
@@ -17,8 +18,8 @@ class RefreshWorker(QThread):
             print(f"Debug - Users to fetch: {self.users}")
 
             # Get PR data
-            data = self.github_prs.get_pr_data(self.users, force_refresh=True)
-            
+            data = self.github_prs.get_pr_data(self.users)
+
             if data is not None:
                 print("Debug - Successfully fetched PR data")
                 self.progress.emit("Completed refresh")
@@ -27,8 +28,8 @@ class RefreshWorker(QThread):
                 error_msg = "No data returned from GitHub API"
                 print(f"Debug - Error: {error_msg}")
                 self.error.emit(error_msg)
-                
+
         except Exception as e:
             error_msg = f"Error refreshing data: {str(e)}"
             print(f"Debug - {error_msg}")
-            self.error.emit(error_msg) 
+            self.error.emit(error_msg)
