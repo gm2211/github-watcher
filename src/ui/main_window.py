@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.github_auth import get_github_api_key
-from src.github_prs import GitHubPRs
+from src.github_prs_client import GitHubPRsClient
 from src.notifications import notify
 from src.settings import Settings
 from src.ui.filters import FiltersBar
@@ -24,12 +24,14 @@ from src.ui.pr_card import create_pr_card
 from src.ui.refresh_worker import RefreshWorker
 from src.ui.section_frame import SectionFrame
 from src.ui.settings_dialog import SettingsDialog
+from src.ui.state import UIState
 from src.ui.theme import Styles
 
 
-class PRWatcherUI(QMainWindow):
+class MainWindow(QMainWindow):
     def __init__(self, state, settings: Settings):
         super().__init__()
+        self.auto_refresh_timer: QTimer | None = None
         self.state = state
         self.settings = settings
         self.setWindowTitle("GitHub PR Watcher")
@@ -188,7 +190,7 @@ class PRWatcherUI(QMainWindow):
 
             # Update user filter and refresh data if users changed
             if new_settings.get("users") != current_settings.get("users"):
-                self.update_user_filter()
+                self.populate_users_filter()
                 self.refresh_data()
             else:
                 # Just update UI for threshold changes
@@ -230,22 +232,6 @@ class PRWatcherUI(QMainWindow):
             print(f"Error applying filters: {e}")
             traceback.print_exc()
 
-    def _filter_prs(self, pr_data, filter_state):
-        """Filter PRs based on the filter state"""
-        filtered_prs = []
-        for user, prs in pr_data.items():
-            if (
-                "All Authors" not in filter_state["selected_users"]
-                and user not in filter_state["selected_users"]
-            ):
-                continue
-            for pr in prs:
-                # Apply draft filter
-                if not filter_state["show_drafts"] and getattr(pr, "draft", False):
-                    continue
-                filtered_prs.append(pr)
-        return filtered_prs
-
     def _update_section(self, frame, pr_data, filter_state):
         """Update a section with filtered PR data"""
         print(f"\nDebug - Updating section: {frame.title}")
@@ -258,18 +244,7 @@ class PRWatcherUI(QMainWindow):
                         widget.deleteLater()
 
             # Filter and group PRs
-            filtered_prs = []
-            for user, prs in pr_data.items():
-                if (
-                    "All Authors" not in filter_state["selected_users"]
-                    and user not in filter_state["selected_users"]
-                ):
-                    continue
-                for pr in prs:
-                    # Apply draft filter
-                    if not filter_state["show_drafts"] and getattr(pr, "draft", False):
-                        continue
-                    filtered_prs.append(pr)
+            filtered_prs = _filter_prs(pr_data, filter_state)
 
             # Update count
             frame.update_count(len(filtered_prs))
@@ -284,7 +259,7 @@ class PRWatcherUI(QMainWindow):
         except Exception as e:
             print(f"Error updating section {frame.title}: {e}")
 
-    def update_user_filter(self):
+    def populate_users_filter(self):
         """Update the user filter with current users"""
         try:
             users = self.settings.get("users", [])
@@ -308,7 +283,7 @@ class PRWatcherUI(QMainWindow):
                 print("Debug - No users configured")
                 return
 
-            self.refresh_worker = RefreshWorker(self.github_prs, users)
+            self.refresh_worker = RefreshWorker(self.github_prs_client, users)
             self.refresh_worker.finished.connect(self._handle_refresh_complete)
             self.refresh_worker.error.connect(self._handle_refresh_error)
             self.workers.append(self.refresh_worker)
@@ -427,16 +402,7 @@ class PRWatcherUI(QMainWindow):
                     "refresh", {"value": 30, "unit": "seconds"}
                 )
 
-            value = refresh_settings.get("value", 30)
-            unit = refresh_settings.get("unit", "seconds")
-
-            # Convert to milliseconds
-            if unit == "seconds":
-                interval = value * 1000
-            elif unit == "minutes":
-                interval = value * 60 * 1000
-            else:  # hours
-                interval = value * 60 * 60 * 1000
+            interval, unit, value = self.calc_interval(refresh_settings)
 
             print(
                 f"Debug - Setting up refresh timer with interval: {interval}ms ({value} {unit})"
@@ -470,15 +436,7 @@ class PRWatcherUI(QMainWindow):
                 self.auto_refresh_timer.timeout.connect(self.refresh_data)
 
             # Calculate interval
-            value = refresh_settings.get("value", 30)
-            unit = refresh_settings.get("unit", "seconds")
-
-            if unit == "seconds":
-                interval = value * 1000
-            elif unit == "minutes":
-                interval = value * 60 * 1000
-            else:  # hours
-                interval = value * 60 * 60 * 1000
+            interval, unit, value = self.calc_interval(refresh_settings)
 
             # Update timer
             self.auto_refresh_timer.setInterval(interval)
@@ -489,6 +447,17 @@ class PRWatcherUI(QMainWindow):
 
         except Exception as e:
             print(f"Error updating refresh timer: {e}")
+
+    def calc_interval(self, refresh_settings):
+        value = refresh_settings.get("value", 30)
+        unit = refresh_settings.get("unit", "seconds")
+        if unit == "seconds":
+            interval = value * 1000
+        elif unit == "minutes":
+            interval = value * 60 * 1000
+        else:  # hours
+            interval = value * 60 * 60 * 1000
+        return interval, unit, value
 
     def refresh_complete(self):
         """Handle refresh completion"""
@@ -525,47 +494,26 @@ class PRWatcherUI(QMainWindow):
 
 
 def open_ui(
-    github_prs=None,
-    state=None,
-    settings=None,
+    app: QApplication,
+    github_prs_client: GitHubPRsClient,
+    ui_state: UIState,
+    settings: Settings,
 ):
-    app = QApplication([])
-    app.setStyle("Fusion")
+    pass
 
-    window = PRWatcherUI(state, settings)
-    window.settings = settings
 
-    # Use passed GitHubPRs instance or create new one
-    if github_prs is None:
-        github_token = get_github_api_key()
-        github_prs = GitHubPRs(
-            github_token,
-            recency_threshold=timedelta(days=1),
-        )
-    window.github_prs = github_prs
-
-    # Initialize user filter
-    window.update_user_filter()
-
-    # Load saved state and update UI before showing window
-    open_prs, _ = window.state.get_pr_data("open")
-    needs_review, _ = window.state.get_pr_data("review")
-    changes_requested, _ = window.state.get_pr_data("attention")
-    recently_closed, _ = window.state.get_pr_data("closed")
-
-    # Update UI with saved data
-    if any([open_prs, needs_review, changes_requested, recently_closed]):
-        print("\nDebug - Loading saved PR data")
-        window.update_pr_lists(
-            open_prs, needs_review, changes_requested, recently_closed
-        )
-
-    # Initialize refresh timer with current settings
-    window.setup_refresh_timer(settings.get("refresh"))
-
-    window.show()
-
-    # Schedule refresh after window is shown
-    QTimer.singleShot(0, window.refresh_data)
-
-    return app.exec()
+def _filter_prs(pr_data, filter_state):
+    """Filter PRs based on the filter state"""
+    filtered_prs = []
+    for user, prs in pr_data.items():
+        if (
+            "All Authors" not in filter_state["selected_users"]
+            and user not in filter_state["selected_users"]
+        ):
+            continue
+        for pr in prs:
+            # Apply draft filter
+            if not filter_state["show_drafts"] and getattr(pr, "draft", False):
+                continue
+            filtered_prs.append(pr)
+    return filtered_prs

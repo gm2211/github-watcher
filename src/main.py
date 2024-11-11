@@ -6,9 +6,9 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 
 from src.github_auth import get_github_api_key
-from src.github_prs import GitHubPRs
+from src.github_prs_client import GitHubPRsClient
 from src.settings import Settings
-from src.ui.main_window import open_ui
+from src.ui.main_window import MainWindow, open_ui
 from src.ui.state import UIState
 
 VERSION = "1.0.0"
@@ -46,26 +46,43 @@ def main():
         app.setWindowIcon(QIcon(get_resource_path("resources/AppIcon.icns")))
 
     try:
+        # Load UI state and settings
+        ui_state = UIState.load()
+        settings = Settings.load()
+        window = MainWindow(ui_state, settings)
+
         github_token = get_github_api_key()
-        github_prs = GitHubPRs(
+        github_prs_client = GitHubPRsClient(
             github_token,
             recency_threshold=timedelta(days=1),
         )
+        window.github_prs_client = github_prs_client
+        window.populate_users_filter()
 
-        # Load UI state
-        ui_state = UIState.load()
-        settings = Settings.load()
-        window = open_ui(github_prs, ui_state, settings)
+        # Load saved state and update UI before showing window
+        open_prs, _ = window.state.get_pr_data("open")
+        needs_review, _ = window.state.get_pr_data("review")
+        changes_requested, _ = window.state.get_pr_data("attention")
+        recently_closed, _ = window.state.get_pr_data("closed")
 
-        # Schedule immediate refresh
+        # Update UI with saved data
+        if any([open_prs, needs_review, changes_requested, recently_closed]):
+            print("\nDebug - Loading saved PR data")
+            window.update_pr_lists(
+                open_prs, needs_review, changes_requested, recently_closed
+            )
+
+        # Initialize refresh timer with current settings
+        window.setup_refresh_timer(settings.get("refresh"))
+
+        window.show()
+
+        # Schedule refresh after window is shown
         QTimer.singleShot(0, window.refresh_data)
-
         return app.exec()
-
     except Exception as e:
         print(f"Error fetching PR data: {e}")
         print("Please check your GitHub token and internet connection.")
-        return app.exec()
 
 
 if __name__ == "__main__":

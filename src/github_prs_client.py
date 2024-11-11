@@ -10,7 +10,7 @@ from src.objects import PullRequest, TimelineEvent
 DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
 
-class GitHubPRs:
+class GitHubPRsClient:
     def __init__(
         self,
         github_token,

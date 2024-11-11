@@ -6,9 +6,9 @@ class RefreshWorker(QThread):
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
 
-    def __init__(self, github_prs, users, section=None):
+    def __init__(self, github_prs_client, users, section=None):
         super().__init__()
-        self.github_prs = github_prs
+        self.github_prs_client = github_prs_client
         self.users = users
         self.section = section
 
@@ -18,7 +18,7 @@ class RefreshWorker(QThread):
             print(f"Debug - Users to fetch: {self.users}")
 
             # Get PR data
-            data = self.github_prs.get_pr_data(self.users)
+            data = self.github_prs_client.get_pr_data(self.users)
 
             if data is not None:
                 print("Debug - Successfully fetched PR data")

@@ -314,7 +314,11 @@ class PullRequest:
                 "html_url": self.html_url,
                 "repo_owner": self.repo_owner,
                 "repo_name": self.repo_name,
-                "timeline": [event.to_dict() for event in self.timeline] if self.timeline else None,
+                "timeline": (
+                    [event.to_dict() for event in self.timeline]
+                    if self.timeline
+                    else None
+                ),
                 "changed_files": self.changed_files,
                 "additions": self.additions,
                 "deletions": self.deletions,
@@ -342,11 +346,6 @@ class PullRequest:
                 "deletions": None,
             }
 
-    def fetch_timeline(self, github_prs: "GitHubPRs"):
-        self.timeline = github_prs.get_pr_timeline(
-            self.repo_owner, self.repo_name, self.number
-        )
-
     @staticmethod
     def parse_pr(pr_data: dict) -> "PullRequest":
         """Create PullRequest from a dictionary"""
@@ -357,7 +356,9 @@ class PullRequest:
             timeline = None
             if timeline_data := pr_data.get("timeline"):
                 print(f"Debug - Processing timeline with {len(timeline_data)} events")
-                timeline = [TimelineEvent.from_dict(event) for event in timeline_data if event]
+                timeline = [
+                    TimelineEvent.from_dict(event) for event in timeline_data if event
+                ]
 
             # Ensure required fields exist
             if "state" not in pr_data:
