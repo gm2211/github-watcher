@@ -1,3 +1,5 @@
+from typing import Set
+
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QStandardItem, QStandardItemModel
 from PyQt6.QtWidgets import QComboBox, QListView
@@ -6,14 +8,13 @@ from PyQt6.QtWidgets import QComboBox, QListView
 class MultiSelectComboBox(QComboBox):
     selectionChanged = pyqtSignal()
 
-    def __init__(self, default_selection):
+    def __init__(self, default_selection: str):
         super().__init__(None)
-        self.default_selection = default_selection
-        self._selected = {self.default_selection}
+        self.default_selection: str = default_selection
+        self._selected: Set[str] = {self.default_selection}
 
         # Create and set model
-        self._model: QStandardItemModel = QStandardItemModel()
-        self.setModel(self._model)
+        self._model = QStandardItemModel()
 
         # Setup view
         view = QListView()
@@ -23,11 +24,11 @@ class MultiSelectComboBox(QComboBox):
         # Initial setup
         self.setEditable(False)
 
-        # Connect signals
-        self._model.itemChanged.connect(self._on_item_changed)
-
     def _on_item_changed(self, item):
         """Handle checkbox state changes"""
+        if not item:  # Add safety check for null item
+            return
+
         text = item.text()
         checked = item.checkState() == Qt.CheckState.Checked
 
@@ -37,13 +38,16 @@ class MultiSelectComboBox(QComboBox):
                 self._selected = {self.default_selection}
                 # Update all other checkboxes
                 for row in range(1, self._model.rowCount()):
-                    self._model.item(row).setCheckState(Qt.CheckState.Unchecked)
+                    item = self._model.item(row)
+                    if item:  # Add safety check
+                        item.setCheckState(Qt.CheckState.Unchecked)
         else:
             if checked:
                 # Add to selection and uncheck ALL_AUTHORS
                 self._selected.add(text)
                 self._selected.discard(self.default_selection)
-                if all_authors := self._model.item(0):
+                all_authors = self._model.item(0)
+                if all_authors:  # Add safety check
                     all_authors.setCheckState(Qt.CheckState.Unchecked)
             else:
                 # Remove from selection
@@ -51,7 +55,8 @@ class MultiSelectComboBox(QComboBox):
                 # If nothing selected, select ALL_AUTHORS
                 if len(self._selected) == 0:
                     self._selected = {self.default_selection}
-                    if all_authors := self._model.item(0):
+                    all_authors = self._model.item(0)
+                    if all_authors:  # Add safety check
                         all_authors.setCheckState(Qt.CheckState.Checked)
 
         self._update_display()
@@ -72,7 +77,8 @@ class MultiSelectComboBox(QComboBox):
 
     def addItems(self, items):
         """Add items to the combo box"""
-        self._model.clear()
+        print("Adding items {}".format(items))
+        new_model = QStandardItemModel()
         self._selected = {self.default_selection}
 
         for text in items:
@@ -83,9 +89,18 @@ class MultiSelectComboBox(QComboBox):
                 else Qt.CheckState.Unchecked
             )
             item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
-            self._model.appendRow(item)
+            new_model.appendRow(item)
 
+        self._update_qt_model(new_model)
         self._update_display()
+
+    def _update_qt_model(self, new_model):
+        if self._model:
+            self._model.itemChanged.disconnect(self._on_item_changed)
+            self._model.clear()
+        self._model = new_model
+        self.setModel(self._model)
+        self._model.itemChanged.connect(self._on_item_changed)
 
     def get_selected_items(self):
         """Get currently selected items"""

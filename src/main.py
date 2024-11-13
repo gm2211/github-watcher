@@ -1,5 +1,6 @@
 import os
 import sys
+import traceback
 from datetime import timedelta
 
 from PyQt6.QtCore import QTimer
@@ -57,6 +58,7 @@ def main():
         QTimer.singleShot(0, window.refresh_data)
         return app.exec()
     except Exception as e:
+        traceback.print_exc()
         print(f"Error fetching PR data: {e}")
 
 

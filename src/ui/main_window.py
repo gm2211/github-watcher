@@ -183,13 +183,10 @@ class MainWindow(QMainWindow):
                 return
 
             # Get current settings from the Settings instance
-            current_settings = self.settings
+            previous_settings = self.settings
 
             # Compare refresh settings
-            if (
-                current_settings.refresh.value != new_settings.refresh.value
-                or current_settings.refresh.unit != new_settings.refresh.unit
-            ):
+            if previous_settings.refresh != new_settings.refresh:
                 self.setup_or_reset_refresh_timer(new_settings.refresh)
 
             # Store new settings
@@ -197,12 +194,12 @@ class MainWindow(QMainWindow):
             self.populate_users_filter()
 
             # Update user filter and refresh data if users changed
-            if new_settings.users != current_settings.users:
+            if new_settings.users != previous_settings.users:
                 self.refresh_data()  # This will also apply filters / update UI
             else:
                 self.apply_filters()
         except Exception as e:
-
+            print(f"Error applying settings: {e}")
             traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to apply settings: {str(e)}")
 
@@ -221,7 +218,6 @@ class MainWindow(QMainWindow):
             ]:
                 # Get PR data - returns tuple of (data, timestamp)
                 pr_data, _ = self.ui_state.get_pr_data(frame.name)
-                print(f"Applying filters to {frame.name} section for {pr_data} PRs")
                 if pr_data is None:
                     continue
 
