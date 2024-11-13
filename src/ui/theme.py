@@ -53,22 +53,26 @@ class Styles:
         }}
     """
 
+    HEADER_TITLE_CSS_NAME = "headerTitle"
+    HEADER_CONTAINER_CSS_NAME = "headerContainer"
+    LOADING_LABEL_CSS_NAME = "loadingLabel"
+
     HEADER = f"""
-        QWidget#headerContainer {{
+        QWidget#{HEADER_CONTAINER_CSS_NAME} {{
             background-color: {Colors.BG_HEADER};
             border-radius: 8px;
             margin-bottom: 0px;
             padding-bottom: 0px;
             border: 1px solid {Colors.BORDER_HEADER};
         }}
-        QLabel#headerTitle {{
+        QLabel#{HEADER_TITLE_CSS_NAME} {{
             color: {Colors.TEXT_HEADER};
             font-size: 20px;
             font-weight: 600;
             margin-right: 16px;
             font-family: {FONT_FAMILY};
         }}
-        QLabel#loadingLabel {{
+        QLabel#{LOADING_LABEL_CSS_NAME} {{
             color: {Colors.INFO};
             font-size: 12px;
             padding: 0 5px;

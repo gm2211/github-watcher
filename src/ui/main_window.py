@@ -61,7 +61,7 @@ class MainWindow(QMainWindow):
 
         # Create header with buttons and filters
         header_container = QWidget()
-        header_container.setObjectName("headerContainer")
+        header_container.setObjectName(Styles.HEADER_CONTAINER_CSS_NAME)
         header_container.setStyleSheet(Styles.HEADER)
 
         # Create a vertical layout for header + filters
@@ -80,13 +80,13 @@ class MainWindow(QMainWindow):
 
         # Loading indicator
         self.loading_label = QLabel("Refreshing Data...")
-        self.loading_label.setObjectName("loadingLabel")
+        self.loading_label.setObjectName(Styles.LOADING_LABEL_CSS_NAME)
         self.loading_label.hide()
         left_layout.addWidget(self.loading_label)
 
         # Title
         title = QLabel("GitHub PR Watcher")
-        title.setObjectName("headerTitle")
+        title.setObjectName(Styles.HEADER_TITLE_CSS_NAME)
         left_layout.addWidget(title)
 
         header_layout.addLayout(left_layout)
