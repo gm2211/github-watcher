@@ -217,6 +217,23 @@ class GitHubPRsClient:
                 pr.changed_files = details.get("changed_files")
                 pr.additions = details.get("additions")
                 pr.deletions = details.get("deletions")
+                pr.merged_at = details.get("merged_at")
+                pr.merged = details.get("merged", False)
+                pr.mergeable = details.get("mergeable")
+                pr.mergeable_state = details.get("mergeable_state")
+                pr.merge_commit_sha = details.get("merge_commit_sha")
+                pr.comments = details.get("comments", 0)
+                pr.review_comments = details.get("review_comments", 0)
+                pr.commits = details.get("commits", 0)
+                pr.maintainer_can_modify = details.get("maintainer_can_modify")
+                pr.draft = details.get("draft", False)
+                pr.author_association = details.get("author_association")
+                if head := details.get("head"):
+                    pr.head_ref = head.get("ref")
+                    pr.head_sha = head.get("sha")
+                if base := details.get("base"):
+                    pr.base_ref = base.get("ref")
+                    pr.base_sha = base.get("sha")
             return pr
         except Exception as e:
             print(f"Warning: Error fetching details for PR #{pr.number}: {e}")
@@ -273,16 +290,16 @@ class GitHubPRsClient:
                         ]
 
                         # Update PRs with details as they complete
-                        updated_prs = []
+                        prs_with_details = []
                         for detail_future in detail_futures:
                             if self._shutdown:
                                 break
-                            pr = detail_future.result()
-                            if pr:
-                                updated_prs.append(pr)
+                            pr_with_details = detail_future.result()
+                            if pr_with_details:
+                                prs_with_details.append(pr_with_details)
 
-                        if updated_prs:  # Only add if we have PRs
-                            section_results[user] = updated_prs
+                        if prs_with_details:  # Only add if we have PRs
+                            section_results[user] = prs_with_details
 
                 return section_results
 
