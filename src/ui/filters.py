@@ -29,11 +29,11 @@ class FilterState:
 
 
 class FiltersBar(QWidget):
-    filters_changed = pyqtSignal(FilterState)  # Changed to emit FilterState
+    # has to be put here and not in init, unclear why (even putting it before parent __init__ call doesn't work)
+    filters_changed_signal = pyqtSignal()
 
     def __init__(self):
         super().__init__(None)
-
         self.user_filter = MultiSelectComboBox(default_selection=ALL_AUTHORS)
         self.show_drafts_toggle = QCheckBox("Show Drafts")
         self.group_by_user_toggle = QCheckBox("Group by User")
@@ -81,26 +81,22 @@ class FiltersBar(QWidget):
 
         # Combo box
         self.user_filter.setStyleSheet(Styles.COMBO_BOX)
-        self.user_filter.selectionChanged.connect(self._on_user_filter_changed)
+        self.user_filter.selectionChanged.connect(self._on_selected_users_changed)
         filter_layout.addWidget(self.user_filter)
 
         self.layout.addWidget(filter_container)
 
     def _on_drafts_toggled(self):
         self.filter_state.show_drafts = self.show_drafts_toggle.isChecked()
-        self._update_filter_state()
+        self.filters_changed_signal.emit()
 
     def _on_grouping_toggled(self):
         self.filter_state.group_by_user = self.group_by_user_toggle.isChecked()
-        self._update_filter_state()
+        self.filters_changed_signal.emit()
 
-    def _on_user_filter_changed(self):
+    def _on_selected_users_changed(self):
         self.filter_state.selected_users = self.user_filter.get_selected_items()
-        self._update_filter_state()
-
-    def _update_filter_state(self):
-        """Emit the current filter state"""
-        self.filters_changed.emit(self.filter_state)
+        self.filters_changed_signal.emit()
 
     def update_user_filter(self, users):
         """Update available users in the filter"""
@@ -109,10 +105,10 @@ class FiltersBar(QWidget):
             self.user_filter.clear()
 
             # Add items
-            items = [ALL_AUTHORS]
+            all_users = [ALL_AUTHORS]
             if users:
-                items.extend(sorted(users))
-            self.user_filter.addItems(items)
+                all_users.extend(sorted(users))
+            self.user_filter.addItems(all_users)
 
         except Exception as e:
             print(f"Error updating user filter: {e}")

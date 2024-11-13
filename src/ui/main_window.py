@@ -102,7 +102,7 @@ class MainWindow(QMainWindow):
 
         # Create and add filters
         self.filter_bar = FiltersBar()
-        self.filter_bar.filters_changed.connect(self.apply_filters)
+        self.filter_bar.filters_changed_signal.connect(self.apply_filters)
         header_vertical.addWidget(self.filter_bar)
 
         # Add header container to main layout
@@ -130,6 +130,7 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(scroll_area, 1)
 
         # Populate data and setup background refresh
+        self.populate_users_filter()
         self.apply_filters()
         self.setup_or_reset_refresh_timer(settings.refresh)
 
@@ -193,14 +194,13 @@ class MainWindow(QMainWindow):
 
             # Store new settings
             self.settings = new_settings
+            self.populate_users_filter()
 
             # Update user filter and refresh data if users changed
             if new_settings.users != current_settings.users:
-                self.populate_users_filter()
-                self.refresh_data()
+                self.refresh_data()  # This will also apply filters / update UI
             else:
                 self.apply_filters()
-
         except Exception as e:
 
             traceback.print_exc()
@@ -288,6 +288,7 @@ class MainWindow(QMainWindow):
     def populate_users_filter(self):
         """Update the user filter with current users"""
         try:
+            print("Populating user filter {}".format(self.settings.users))
             self.filter_bar.update_user_filter(self.settings.users)
         except Exception as e:
             print(f"Error updating user filter: {e}")

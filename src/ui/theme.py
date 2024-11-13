@@ -39,7 +39,7 @@ class Colors:
 
 
 class Styles:
-    FONT_FAMILY = '"SF Pro Display", "SF Pro", system-ui, "Helvetica Neue", Helvetica, Arial, sans-serif'
+    FONT_FAMILY = '"Helvetica Neue", Helvetica, Arial'
     SECTION_FRAME_CSS_CLASS = "sectionFrame"
     MAIN_WINDOW = f"""
         QMainWindow {{
@@ -104,7 +104,7 @@ class Styles:
             color: {Colors.TEXT_HEADER_SECONDARY};
             font-size: 13px;
             font-weight: 500;
-            font-family: BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+            font-family: {FONT_FAMILY};
         }}
         QCheckBox {{
             color: {Colors.TEXT_HEADER_SECONDARY};
@@ -115,7 +115,7 @@ class Styles:
             border-radius: 6px;
             background: {Colors.BG_DARK};
             border: 1px solid {Colors.BORDER_DEFAULT};
-            font-family: BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+            font-family: {FONT_FAMILY};
         }}
         QCheckBox:hover {{
             color: {Colors.TEXT_HEADER};
@@ -153,7 +153,7 @@ class Styles:
         }}
         QLabel {{
             color: {Colors.TEXT_PRIMARY};
-            font-family: BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+            font-family: {FONT_FAMILY};
         }}
     """
 
@@ -171,7 +171,7 @@ class Styles:
         }}
         QLabel {{
             color: {Colors.TEXT_PRIMARY};
-            font-family: BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+            font-family: {FONT_FAMILY};
         }}
         QLabel[link=true] {{
             color: {Colors.TEXT_LINK};
@@ -182,7 +182,7 @@ class Styles:
         QTextEdit {{
             background-color: {Colors.BG_DARKEST};
             color: {Colors.TEXT_PRIMARY};
-            font-family: monospace;
+            font-family: {FONT_FAMILY};
             padding: 10px;
         }}
     """
@@ -194,7 +194,7 @@ class Styles:
     border: 1px solid {Colors.BORDER_DEFAULT};
     border-radius: 4px;
     padding: 4px 1px;
-    font-family: monospace;
+    font-family: {FONT_FAMILY};
     min-height: 15px;
     font-size: 12px;
     font-weight: 600;
@@ -256,7 +256,7 @@ class Styles:
             font-size: 12px;
             height: 28px;
             min-width: 70px;
-            font-family: BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+            font-family: {FONT_FAMILY};
         }}
         QPushButton:hover {{
             background-color: {Colors.BG_LIGHTER};
@@ -269,7 +269,7 @@ class Styles:
             color: {Colors.TEXT_PRIMARY};
             font-size: 12px;
             spacing: 5px;
-            font-family: BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+            font-family: {FONT_FAMILY};
         }}
         QCheckBox::indicator {{
             width: 16px;
@@ -296,7 +296,7 @@ class Styles:
             padding: 5px 10px;
             min-width: 200px;
             font-size: 12px;
-            font-family: BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+            font-family: {FONT_FAMILY};
         }}
         QComboBox:hover {{
             border-color: {Colors.TEXT_LINK};
