@@ -121,6 +121,22 @@ class SettingsDialog(QDialog):
 
         thresholds_layout.addWidget(deletions_group)
 
+        # Age thresholds
+        age_group = QGroupBox("PR Age Thresholds (days)")
+        age_layout = QFormLayout(age_group)
+
+        self.age_warning = QSpinBox()
+        self.age_warning.setRange(1, 30)
+        self.age_warning.setValue(self.settings.thresholds.age.warning)
+        age_layout.addRow("Warning Level:", self.age_warning)
+
+        self.age_danger = QSpinBox()
+        self.age_danger.setRange(1, 90)
+        self.age_danger.setValue(self.settings.thresholds.age.danger)
+        age_layout.addRow("Danger Level:", self.age_danger)
+
+        thresholds_layout.addWidget(age_group)
+
         # Recently Closed threshold
         recent_group = QGroupBox("Recently Closed Settings")
         recent_layout = QFormLayout(recent_group)
@@ -163,6 +179,8 @@ class SettingsDialog(QDialog):
             self.settings.thresholds.additions.danger = self.additions_danger.value()
             self.settings.thresholds.deletions.warning = self.deletions_warning.value()
             self.settings.thresholds.deletions.danger = self.deletions_danger.value()
+            self.settings.thresholds.age.warning = self.age_warning.value()
+            self.settings.thresholds.age.danger = self.age_danger.value()
             self.settings.thresholds.recently_closed_days = (
                 self.recent_threshold.value()
             )

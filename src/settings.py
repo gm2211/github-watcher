@@ -1,6 +1,7 @@
 import os
 from dataclasses import asdict, dataclass, field
 from typing import List
+from datetime import datetime
 
 import yaml
 
@@ -16,6 +17,7 @@ class Thresholds:
     files: ThresholdPair = field(default_factory=lambda: ThresholdPair(10, 50))
     additions: ThresholdPair = field(default_factory=lambda: ThresholdPair(500, 1000))
     deletions: ThresholdPair = field(default_factory=lambda: ThresholdPair(500, 2000))
+    age: ThresholdPair = field(default_factory=lambda: ThresholdPair(7, 14))
     recently_closed_days: int = 7
 
 
@@ -65,6 +67,9 @@ class Settings:
                     deletions=ThresholdPair(
                         **data.get("thresholds", {}).get("deletions", {})
                     ),
+                    age=ThresholdPair(
+                        **data.get("thresholds", {}).get("age", {})
+                    ),
                     recently_closed_days=data.get("thresholds", {}).get(
                         "recently_closed_days", 7
                     ),
@@ -88,6 +93,7 @@ class Settings:
                     "files": asdict(self.thresholds.files),
                     "additions": asdict(self.thresholds.additions),
                     "deletions": asdict(self.thresholds.deletions),
+                    "age": asdict(self.thresholds.age),
                     "recently_closed_days": self.thresholds.recently_closed_days,
                 },
             }

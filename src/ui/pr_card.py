@@ -1,5 +1,6 @@
 import json
 import webbrowser
+from datetime import datetime
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -103,6 +104,47 @@ def create_changes_badge(additions, deletions, settings):
     layout.addWidget(deletions_label)
 
     return changes_badge
+
+
+def format_time_ago(delta) -> str:
+    """Format a timedelta into a human readable string"""
+    total_seconds = int(delta.total_seconds())
+    
+    if total_seconds < 60:
+        return f"{total_seconds} seconds old"
+    
+    minutes = total_seconds // 60
+    if minutes < 60:
+        return f"{minutes} minutes old"
+    
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} hours old"
+    
+    days = hours // 24
+    return f"{days} days old"
+
+
+def calculate_pr_age_days(pr: PullRequest) -> tuple[int, str]:
+    """Calculate PR age in days and return formatted string"""
+    if not pr.created_at:
+        return 0, "0 seconds old"
+        
+    if isinstance(pr.created_at, str):
+        # Handle both +00:00 and Z format
+        created_at = datetime.fromisoformat(pr.created_at.replace('Z', '+00:00'))
+    else:
+        created_at = pr.created_at
+    
+    # Ensure both datetimes are timezone-aware
+    now = datetime.now().astimezone()
+    if created_at.tzinfo is None:
+        created_at = created_at.astimezone()
+    
+    delta = now - created_at
+    days = delta.days
+    
+    return days, format_time_ago(delta)
 
 
 def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
@@ -309,6 +351,21 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     if additions > 0 or deletions > 0:
         changes_badge = create_changes_badge(additions, deletions, settings)
         badges_layout.addWidget(changes_badge)
+
+    # Age badge
+    age_days, age_text = calculate_pr_age_days(pr)
+    age_warning = settings.thresholds.age.warning
+    age_danger = settings.thresholds.age.danger
+
+    if age_days >= age_danger:
+        badge_color = "#dc3545"  # Red
+    elif age_days >= age_warning:
+        badge_color = "#ffc107"  # Yellow
+    else:
+        badge_color = "#28a745"  # Green
+
+    age_badge = create_badge(age_text, badge_color, opacity=0.5)
+    badges_layout.addWidget(age_badge)
 
     badges_layout.addStretch()
     header.addLayout(badges_layout)
