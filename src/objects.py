@@ -100,7 +100,8 @@ class TimelineEvent:
     id: int
     node_id: str
     url: str
-    author: User | Author
+    # Should ideally not be none, but doing this if parsing errors
+    author: Optional[User | Author] = None
     eventType: Optional[TimelineEventType] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -126,7 +127,7 @@ class TimelineEvent:
                 "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             }
         except Exception as e:
-            print(f"Warning: Error serializing TimelineEvent: {e}")
+            print(f"Error converting event to dict: {e}")
             return {
                 "id": self.id,
                 "node_id": self.node_id,
@@ -138,12 +139,9 @@ class TimelineEvent:
             }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "TimelineEvent":
+    def parse_event(cls, data: dict) -> "TimelineEvent":
         """Create TimelineEvent from a dictionary"""
         try:
-            print(
-                f"Debug: from_dict called with eventType: {data.get('eventType')} (type: {type(data.get('eventType'))})"
-            )
             # Convert string back to enum if present
             event_type = None
             if event_type_str := data.get("eventType"):
@@ -187,7 +185,7 @@ class TimelineEvent:
                 updated_at=updated_at,
             )
         except Exception as e:
-            print(f"Warning: Error parsing TimelineEvent from dict: {e}, data: {data}")
+            print(f"Error parsing event: {e}")
             return cls(
                 id=data.get("id", 0),
                 node_id=data.get("node_id", ""),
@@ -237,7 +235,7 @@ class TimelineEvent:
                         else:
                             author = User.parse(author_data)
                     except Exception as e:
-                        print(f"Warning: Error parsing author data: {e}")
+                        print(f"Error parsing author: {e}")
                         author = None
                 else:
                     author = None
@@ -267,11 +265,11 @@ class TimelineEvent:
                     created_at=created_at,
                     updated_at=updated_at,
                 )
-                print(f"Debug - Parsed event: {event_type}")
+
                 parsed_events.append(parsed_event)
 
             except Exception as e:
-                print(f"Warning: Error parsing event: {e}, event data: {event}")
+                print(f"Error parsing event: {e}")
                 continue
 
         return parsed_events
@@ -324,7 +322,7 @@ class PullRequest:
                 "deletions": self.deletions,
             }
         except Exception as e:
-            print(f"Warning: Error serializing PullRequest: {e}")
+            print(f"Error converting PR to dict: {e}")
             # Return minimal valid dict
             return {
                 "id": self.id,
@@ -350,14 +348,13 @@ class PullRequest:
     def parse_pr(pr_data: dict) -> "PullRequest":
         """Create PullRequest from a dictionary"""
         try:
-            print(f"\nDebug - parse_pr called with data: {pr_data}")
 
             # Parse timeline if present
             timeline = None
             if timeline_data := pr_data.get("timeline"):
-                print(f"Debug - Processing timeline with {len(timeline_data)} events")
+
                 timeline = [
-                    TimelineEvent.from_dict(event) for event in timeline_data if event
+                    TimelineEvent.parse_event(event) for event in timeline_data if event
                 ]
 
             # Ensure required fields exist
@@ -383,12 +380,11 @@ class PullRequest:
                 additions=pr_data.get("additions"),
                 deletions=pr_data.get("deletions"),
             )
-            print(f"Debug - Successfully created PR object: #{pr.number}")
+
             return pr
 
         except Exception as e:
-            print(f"Warning: Error parsing PullRequest from dict: {e}")
-            print(f"Data: {pr_data}")
+            print(f"Error parsing PR: {e}")
             raise
 
     @staticmethod

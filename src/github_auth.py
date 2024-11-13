@@ -1,5 +1,4 @@
 import subprocess
-import sys
 import webbrowser
 from urllib.parse import urlencode
 
@@ -22,9 +21,6 @@ REQUIRED_SCOPES = [
 def get_github_api_key():
     try:
         # Try to retrieve the API key from Keychain
-        print("Attempting to retrieve API key from Keychain...")
-        print(f"Service: {KEYCHAIN_SERVICE}")
-        print(f"Account: {KEYCHAIN_ACCOUNT}")
 
         result = subprocess.run(
             [
@@ -41,12 +37,11 @@ def get_github_api_key():
             check=True,
         )
         token = result.stdout.strip()
-        print("Successfully retrieved token from Keychain")
+
         return token
 
     except subprocess.CalledProcessError as e:
-        print(f"Error accessing keychain: {e}")
-        print(f"stderr: {e.stderr}")
+        print(f"Error getting API key from Keychain: {e}")
 
         # Show dialog about creating new token
         msg = QMessageBox()
@@ -99,10 +94,10 @@ def get_github_api_key():
                         ],
                         check=True,
                     )
-                    print("Successfully stored new token in Keychain")
+
                     return token
                 except subprocess.CalledProcessError as e:
-                    print(f"Error storing in keychain: {e}")
+
                     QMessageBox.critical(
                         None,
                         "Error",
@@ -119,15 +114,3 @@ def get_github_api_key():
                 None, "Warning", "Cannot proceed without a GitHub API key."
             )
             return None
-
-
-if __name__ == "__main__":
-    # Test the keychain access
-    from PyQt6.QtWidgets import QApplication
-
-    app = QApplication(sys.argv)
-    api_key = get_github_api_key()
-    if api_key:
-        print("Successfully retrieved API key")
-    else:
-        print("Failed to get API key")

@@ -1,6 +1,8 @@
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from dataclasses import dataclass
+from enum import Enum, auto
 
 import requests
 
@@ -8,6 +10,19 @@ from src.notifications import notify
 from src.objects import PullRequest, TimelineEvent
 
 DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+class PRSection(Enum):
+    OPEN = auto()
+    REVIEW = auto()
+    ATTENTION = auto()
+    CLOSED = auto()
+
+
+@dataclass
+class PRQueryConfig:
+    query: str
+    section: PRSection
 
 
 class GitHubPRsClient:
@@ -24,7 +39,27 @@ class GitHubPRsClient:
         }
         self.recency_threshold = recency_threshold
         self.max_workers = max_workers
-        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._executor = None
+        self._shutdown = False
+
+        # Define section-specific queries
+        self.section_queries = {
+            PRSection.OPEN: PRQueryConfig(
+                query="is:pr is:open", section=PRSection.OPEN
+            ),
+            PRSection.REVIEW: PRQueryConfig(
+                query="is:pr is:open review:none comments:0 -draft:true",
+                section=PRSection.REVIEW,
+            ),
+            PRSection.ATTENTION: PRQueryConfig(
+                query="is:pr is:open review:changes_requested -draft:true",
+                section=PRSection.ATTENTION,
+            ),
+            PRSection.CLOSED: PRQueryConfig(
+                query=f"is:pr is:closed closed:>={self._recent_date()}",
+                section=PRSection.CLOSED,
+            ),
+        }
 
     def get_pr_timeline(self, repo_owner, repo_name, pr_number) -> list[TimelineEvent]:
         """Fetch the timeline of a specific Pull Request."""
@@ -54,7 +89,7 @@ class GitHubPRsClient:
             results = self._search_issues(user_query, max_results)
             return user, results
         except Exception as e:
-            print(f"Error fetching PRs for user {user}: {e}")
+            print(f"Error fetching PRs for {user}: {e}")
             return user, []
 
     def _search_issues(self, query, max_results=None) -> list[PullRequest]:
@@ -71,10 +106,6 @@ class GitHubPRsClient:
                 response.raise_for_status()
                 data = response.json()
 
-                print(
-                    f"\nDebug - Processing {len(data['items'])} items from GitHub API"
-                )
-
                 # Process each PR item
                 for item in data["items"]:
                     try:
@@ -87,10 +118,6 @@ class GitHubPRsClient:
                             repo_parts = item["html_url"].split("/")
                             repo_owner = repo_parts[-4]
                             repo_name = repo_parts[-3]
-
-                        print(
-                            f"\nDebug - Processing PR #{item.get('number')} from {repo_owner}/{repo_name}"
-                        )
 
                         # Add repo info to item
                         item["repo_owner"] = repo_owner
@@ -126,14 +153,12 @@ class GitHubPRsClient:
                                     item[date_field] = None
 
                         # Parse PR
-                        print(f"Debug - Attempting to parse PR with data: {item}")
+
                         pr = PullRequest.parse_pr(item)
                         results.append(pr)
-                        print(f"Debug - Successfully parsed PR #{pr.number}")
 
                     except Exception as e:
                         print(f"Warning: Error parsing PR item: {e}")
-                        print(f"Item data: {item}")
                         continue
 
                 if max_results and len(results) >= max_results:
@@ -197,88 +222,82 @@ class GitHubPRsClient:
             print(f"Warning: Error fetching details for PR #{pr.number}: {e}")
             return pr
 
-    def get_pr_data(self, users, section=None):
+    def get_pr_data(self, users, section: PRSection = None):
         """Get PR data from GitHub API with parallel processing"""
-        try:
-            # Define section-specific queries
-            section_queries = {
-                "open": "is:pr is:open",
-                "review": "is:pr is:open " "review:none " "comments:0 " "-draft:true",
-                "attention": (
-                    "is:pr is:open " "review:changes_requested " "-draft:true"
-                ),
-                "closed": f"is:pr is:closed closed:>={self._recent_date()}",
-            }
+        if self._shutdown:
+            print("Client is shutting down, aborting PR data fetch")
+            return {}, {}, {}, {}
 
+        try:
             # Process only requested section or all sections
-            sections_to_process = [section] if section else section_queries.keys()
+            sections_to_process = [section] if section else self.section_queries.keys()
 
             results = {}
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                for section_name in sections_to_process:
-                    if section_name not in section_queries:
-                        continue
+            for section in sections_to_process:
+                query_config = self.section_queries[section]
+                results[section] = self._fetch_section_data(users, query_config)
 
-                    query = section_queries[section_name]
-                    print(f"\nDebug - Processing {section_name} with query: {query}")
-
-                    # Fetch PRs for all users in parallel
-                    futures = [
-                        executor.submit(self._fetch_user_prs, user, query, 100)
-                        for user in users
-                    ]
-
-                    section_results = {}
-                    for future in futures:
-                        user, user_prs = future.result()
-                        if user_prs:
-                            # Fetch PR details in parallel
-                            detail_futures = [
-                                executor.submit(self._fetch_pr_details, pr)
-                                for pr in user_prs
-                            ]
-
-                            # Update PRs with details as they complete
-                            updated_prs = []
-                            for detail_future in detail_futures:
-                                pr = detail_future.result()
-                                if pr:
-                                    updated_prs.append(pr)
-
-                            if updated_prs:  # Only add if we have PRs
-                                section_results[user] = updated_prs
-
-                    results[section_name] = section_results
-
-                # Create final data structure - important to return empty dicts if no results
-                data = (
-                    results.get("open", {}),
-                    results.get("review", {}),
-                    results.get("attention", {}),
-                    results.get("closed", {}),
-                )
-
-                print("\nDebug - Final results:")
-                print(f"Open PRs: {len(results.get('open', {}))} users")
-                for user, prs in results.get("open", {}).items():
-                    print(f"  {user}: {len(prs)} PRs")
-                print(f"Review PRs: {len(results.get('review', {}))} users")
-                print(f"Attention PRs: {len(results.get('attention', {}))} users")
-                print(f"Closed PRs: {len(results.get('closed', {}))} users")
-
-                return data
+            # Create final data structure
+            return (
+                results.get(PRSection.OPEN, {}),
+                results.get(PRSection.REVIEW, {}),
+                results.get(PRSection.ATTENTION, {}),
+                results.get(PRSection.CLOSED, {}),
+            )
 
         except Exception as e:
             print(f"Error in get_pr_data: {e}")
             traceback.print_exc()
-            return {}, {}, {}, {}  # Return empty dicts on error
+            return {}, {}, {}, {}
 
-    def _recent_date(self):
+    def _fetch_section_data(self, users, query_config: PRQueryConfig):
+        """Fetch PR data for a specific section"""
+        try:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                # Fetch PRs for all users in parallel
+                futures = [
+                    executor.submit(self._fetch_user_prs, user, query_config.query, 100)
+                    for user in users
+                ]
+
+                section_results = {}
+                for future in futures:
+                    if self._shutdown:
+                        break
+                    user, user_prs = future.result()
+                    if user_prs:
+                        # Fetch PR details in parallel
+                        detail_futures = [
+                            executor.submit(self._fetch_pr_details, pr)
+                            for pr in user_prs
+                        ]
+
+                        # Update PRs with details as they complete
+                        updated_prs = []
+                        for detail_future in detail_futures:
+                            if self._shutdown:
+                                break
+                            pr = detail_future.result()
+                            if pr:
+                                updated_prs.append(pr)
+
+                        if updated_prs:  # Only add if we have PRs
+                            section_results[user] = updated_prs
+
+                return section_results
+
+        except Exception as e:
+            print(f"Error fetching section data: {e}")
+            return {}
+
+    @staticmethod
+    def _recent_date():
         """Get the date threshold for recently closed PRs"""
         date_threshold = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         return date_threshold
 
-    def notify_new_prs(self, new_prs):
+    @staticmethod
+    def notify_new_prs(new_prs):
         """Send notification for new PRs"""
         if new_prs:
             title = "New Pull Requests"

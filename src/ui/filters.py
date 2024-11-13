@@ -1,16 +1,40 @@
+from dataclasses import dataclass, field
+from typing import Dict, Set
+
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QWidget
 
 from .combo_box import MultiSelectComboBox
 from .theme import Colors, Styles
+from ..objects import PullRequest
+
+ALL_AUTHORS = "All Authors"
+
+
+@dataclass
+class FilterState:
+    """Strongly typed filter state"""
+
+    show_drafts: bool = True
+    group_by_user: bool = False
+    selected_users: Set[str] = field(default_factory=lambda: {ALL_AUTHORS})
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for backward compatibility"""
+        return {
+            "show_drafts": self.show_drafts,
+            "group_by_user": self.group_by_user,
+            "selected_users": self.selected_users,
+        }
 
 
 class FiltersBar(QWidget):
-    filtersChanged = pyqtSignal(dict)  # Changed to emit the filter state
+    filters_changed = pyqtSignal(FilterState)  # Changed to emit FilterState
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.user_filter = MultiSelectComboBox()
+    def __init__(self):
+        super().__init__(None)
+
+        self.user_filter = MultiSelectComboBox(default_selection=ALL_AUTHORS)
         self.show_drafts_toggle = QCheckBox("Show Drafts")
         self.group_by_user_toggle = QCheckBox("Group by User")
 
@@ -18,11 +42,7 @@ class FiltersBar(QWidget):
         self.setStyleSheet(Styles.FILTERS)
 
         # Initialize state
-        self.filtersState = {
-            "show_drafts": True,
-            "group_by_user": False,
-            "selected_users": {"All Authors"},
-        }
+        self.filter_state = FilterState()
 
         # Create layout
         self.layout = QHBoxLayout(self)
@@ -39,11 +59,12 @@ class FiltersBar(QWidget):
     def _setup_toggles(self):
         """Setup toggle checkboxes"""
         # Show drafts toggle
-        self.show_drafts_toggle.setChecked(True)
+        self.show_drafts_toggle.setChecked(self.filter_state.show_drafts)
         self.show_drafts_toggle.stateChanged.connect(self._on_drafts_toggled)
         self.layout.addWidget(self.show_drafts_toggle)
 
         # Group by user toggle
+        self.group_by_user_toggle.setChecked(self.filter_state.group_by_user)
         self.group_by_user_toggle.stateChanged.connect(self._on_grouping_toggled)
         self.layout.addWidget(self.group_by_user_toggle)
 
@@ -52,8 +73,6 @@ class FiltersBar(QWidget):
         # Container for filter and label
         filter_container = QWidget()
         filter_layout = QHBoxLayout(filter_container)
-        filter_layout.setContentsMargins(0, 0, 0, 0)
-        filter_layout.setSpacing(8)
 
         # Label
         label = QLabel("Filter by Author:")
@@ -68,20 +87,20 @@ class FiltersBar(QWidget):
         self.layout.addWidget(filter_container)
 
     def _on_drafts_toggled(self):
-        self.filtersState["show_drafts"] = self.show_drafts_toggle.isChecked()
+        self.filter_state.show_drafts = self.show_drafts_toggle.isChecked()
         self._update_filter_state()
 
     def _on_grouping_toggled(self):
-        self.filtersState["group_by_user"] = self.group_by_user_toggle.isChecked()
+        self.filter_state.group_by_user = self.group_by_user_toggle.isChecked()
         self._update_filter_state()
 
     def _on_user_filter_changed(self):
-        self.filtersState["selected_users"] = self.user_filter.get_selected_items()
+        self.filter_state.selected_users = self.user_filter.get_selected_items()
         self._update_filter_state()
 
     def _update_filter_state(self):
         """Emit the current filter state"""
-        self.filtersChanged.emit(self.filtersState)
+        self.filters_changed.emit(self.filter_state)
 
     def update_user_filter(self, users):
         """Update available users in the filter"""
@@ -90,7 +109,7 @@ class FiltersBar(QWidget):
             self.user_filter.clear()
 
             # Add items
-            items = ["All Authors"]
+            items = [ALL_AUTHORS]
             if users:
                 items.extend(sorted(users))
             self.user_filter.addItems(items)
@@ -98,6 +117,36 @@ class FiltersBar(QWidget):
         except Exception as e:
             print(f"Error updating user filter: {e}")
 
-    def get_filter_state(self):
+    def get_filter_state(self) -> FilterState:
         """Get current state of all filters"""
-        return self.filtersState.copy()
+        return self.filter_state
+
+    # weird impl - we're using dict structure to figure out if group_by_user is enabled
+    def filter_prs_grouped_by_users(self, pr_data) -> Dict[str, list[PullRequest]]:
+        """Filter PRs based on current filter state"""
+        filtered_prs = {}
+
+        # First apply user filter
+        for user, prs in pr_data.items():
+            if (
+                ALL_AUTHORS not in self.filter_state.selected_users
+                and user not in self.filter_state.selected_users
+            ):
+                continue
+
+            # Apply draft filter
+            filtered_user_prs = []
+            for pr in prs:
+                if not self.filter_state.show_drafts and pr.draft:
+                    continue
+                filtered_user_prs.append(pr)
+
+            if filtered_user_prs:
+                if self.filter_state.group_by_user:
+                    # When grouping by user, keep the user structure
+                    filtered_prs[user] = filtered_user_prs
+                else:
+                    # When not grouping by user, combine all PRs into a single list
+                    filtered_prs.setdefault("all", []).extend(filtered_user_prs)
+
+        return filtered_prs

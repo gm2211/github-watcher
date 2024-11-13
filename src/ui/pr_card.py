@@ -1,44 +1,53 @@
+import json
 import webbrowser
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout
+from PyQt6.QtWidgets import (
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .theme import Styles
+from ..objects import PullRequest
+from ..utils import hex_to_rgba
 
 
-def create_badge(
-    text, bg_color, fg_color="white", parent=None, min_width=45, opacity=1.0
-):
+class JsonViewDialog(QDialog):
+    def __init__(self, data, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("PR Data")
+        self.setMinimumSize(600, 400)
+
+        layout = QVBoxLayout(self)
+
+        # Create text edit with JSON content
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setStyleSheet(Styles.PR_CARD_JSON_DIALOG)
+
+        # Format JSON with indentation
+        json_str = json.dumps(data, indent=2, default=str)
+        text_edit.setText(json_str)
+
+        layout.addWidget(text_edit)
+
+
+def create_badge(text, bg_color, parent=None, opacity=1.0):
     """Create a styled badge widget"""
     badge = QFrame(parent)
 
     # Convert hex color to rgba with specified opacity
-    if bg_color.startswith("#"):
-        r = int(bg_color[1:3], 16)
-        g = int(bg_color[3:5], 16)
-        b = int(bg_color[5:7], 16)
-        bg_color = f"rgba({r}, {g}, {b}, {opacity})"
+    bg_color = hex_to_rgba(bg_color, opacity)
 
-    badge.setStyleSheet(
-        f"""
-        QFrame {{
-            background-color: {bg_color};
-            border-radius: 10px;
-            min-width: {min_width}px;
-            max-width: {min_width + 20}px;
-            min-height: 20px;
-            max-height: 20px;
-            padding: 0px 6px;
-        }}
-        QLabel {{
-            background: transparent;
-            color: {fg_color};
-            font-size: 10px;
-            padding: 0px;
-        }}
-    """
-    )
+    badge.setStyleSheet(Styles.pr_card_badge(bg_color))
 
     layout = QHBoxLayout(badge)
     layout.setContentsMargins(0, 0, 0, 0)
@@ -53,29 +62,25 @@ def create_badge(
 
 def create_changes_badge(additions, deletions, settings):
     """Create a badge showing additions and deletions with color gradient"""
-    total_changes = additions + deletions
-    bg_color = get_changes_color(total_changes, settings)
+    if additions <= settings.thresholds.additions.warning:
+        left_color = "rgba(40, 167, 69, 0.5)"  # Green
+    elif additions <= settings.thresholds.additions.danger:
+        left_color = "rgba(255, 193, 7, 0.5)"  # Yellow
+    else:
+        left_color = "rgba(220, 53, 69, 0.5)"  # Red
+
+    # Determine right color (deletions)
+    if deletions <= settings.thresholds.deletions.warning:
+        right_color = "rgba(40, 167, 69, 0.5)"  # Green
+    elif deletions <= settings.thresholds.deletions.danger:
+        right_color = "rgba(255, 193, 7, 0.5)"  # Yellow
+    else:
+        right_color = "rgba(220, 53, 69, 0.5)"  # Red
+
+    bg_color = f"qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {left_color}, stop:1 {right_color})"
 
     changes_badge = QFrame()
-    changes_badge.setStyleSheet(
-        f"""
-        QFrame {{
-            background: {bg_color};
-            border-radius: 10px;
-            min-width: 100px;
-            max-width: 120px;
-            min-height: 20px;
-            max-height: 20px;
-            padding: 0px 6px;
-        }}
-        QLabel {{
-            background: transparent;
-            color: white;
-            font-size: 10px;
-            padding: 0px;
-        }}
-    """
-    )
+    changes_badge.setStyleSheet(Styles.pr_card_changes_badge(bg_color))
 
     layout = QHBoxLayout(changes_badge)
     layout.setContentsMargins(6, 0, 6, 0)
@@ -100,38 +105,10 @@ def create_changes_badge(additions, deletions, settings):
     return changes_badge
 
 
-def get_changes_color(total_changes, settings):
-    """Calculate gradient color based on number of changes"""
-    warning_level = settings.get("thresholds", {}).get("lines", {}).get("warning", 500)
-    danger_level = settings.get("thresholds", {}).get("lines", {}).get("danger", 1000)
-
-    if total_changes <= warning_level:
-        return "rgba(40, 167, 69, 0.5)"  # Green with 0.5 opacity
-    elif total_changes <= danger_level:
-        ratio = (total_changes - warning_level) / (danger_level - warning_level)
-        if ratio <= 0.5:
-            return (
-                f"qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-                f"stop:0 rgba(40, 167, 69, 0.5), "
-                f"stop:1 rgba(255, 193, 7, 0.5))"
-            )
-        else:
-            return (
-                f"qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-                f"stop:0 rgba(255, 193, 7, 0.5), "
-                f"stop:1 rgba(220, 53, 69, 0.5))"
-            )
-    else:
-        return "rgba(220, 53, 69, 0.5)"  # Red with 0.5 opacity
-
-
-def create_pr_card(pr_data, settings, parent=None):
+def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     """Create a card widget for a pull request"""
-    print(f"\nDebug - Creating PR card for #{pr_data.number}:")
-    print(f"  Title: {pr_data.title}")
-    print(f"  State: {pr_data.state}")
-    print(f"  Draft: {getattr(pr_data, 'draft', None)}")
-    print(f"  Timeline events: {len(getattr(pr_data, 'timeline', []) or [])}")
+    # Simplified debug logging - only show essential info
+    print(f"Creating PR card for {pr.repo_owner}/{pr.repo_name}#{pr.number}")
 
     card = QFrame(parent)
     card.setObjectName("prCard")
@@ -146,47 +123,175 @@ def create_pr_card(pr_data, settings, parent=None):
     header = QVBoxLayout()
     header.setSpacing(4)
 
-    # Top row with title and repo info
+    # Top row with title, repo info, status badge and JSON button
     top_row = QHBoxLayout()
     top_row.setSpacing(8)
 
+    # Title container to ensure proper width
+    title_container = QWidget()
+    title_container.setSizePolicy(
+        QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+    )
+    title_layout = QVBoxLayout(title_container)
+    title_layout.setContentsMargins(0, 0, 0, 0)
+    title_layout.setSpacing(2)
+
     # Title with PR number
-    title_text = f"{pr_data.title} (#{pr_data.number})"
+    title_text = f"{pr.title} (#{pr.number})"
     title = QLabel(title_text)
     title.setFont(QFont("", 13, QFont.Weight.Bold))
     title.setStyleSheet("color: #58a6ff; text-decoration: underline;")
     title.setCursor(Qt.CursorShape.PointingHandCursor)
     title.setWordWrap(True)
+    title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-    if url := getattr(pr_data, "html_url", None):
+    if url := getattr(pr, "html_url", None):
 
-        def open_url(event):
+        def open_url(_ignored):
             webbrowser.open(url)
 
         title.mousePressEvent = open_url
 
-    top_row.addWidget(title)
+    title_layout.addWidget(title)
 
-    # Add repo info
-    repo_text = f"{pr_data.repo_owner}/{pr_data.repo_name}"
+    # Add repo info and author
+    info_container = QWidget()
+    info_layout = QHBoxLayout(info_container)
+    info_layout.setContentsMargins(0, 0, 0, 0)
+    info_layout.setSpacing(8)
+
+    # Repository info
+    repo_text = f"{pr.repo_owner}/{pr.repo_name}"
     repo_label = QLabel(repo_text)
     repo_label.setStyleSheet("color: #8b949e; font-size: 11px;")
-    repo_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-    top_row.addWidget(repo_label)
+    info_layout.addWidget(repo_label)
 
+    # Separator
+    separator = QLabel("•")
+    separator.setStyleSheet("color: #8b949e; font-size: 11px;")
+    info_layout.addWidget(separator)
+
+    # Author info
+    if hasattr(pr, "user") and pr.user:
+        author_label = QLabel(f"author: {pr.user.login}")
+        author_label.setStyleSheet("color: #8b949e; font-size: 11px;")
+        info_layout.addWidget(author_label)
+
+    info_layout.addStretch()
+    title_layout.addWidget(info_container)
+
+    top_row.addWidget(title_container, stretch=1)
+
+    # Right side container for status badge and JSON button
+    right_container = QWidget()
+    right_layout = QVBoxLayout(right_container)
+    right_layout.setContentsMargins(0, 2, 0, 2)  # Small vertical margins
+    right_layout.setSpacing(8)  # Increased spacing between badge and button from 6 to 8
+
+    # Status badge (OPEN/CLOSED/MERGED)
+    status_color = "#28a745"  # Default green for open
+    status_text = "OPEN"
+
+    if getattr(pr, "merged_at", None):
+        status_color = "#6f42c1"  # Purple for merged
+        status_text = "MERGED"
+    elif getattr(pr, "closed_at", None):
+        status_color = "#dc3545"  # Red for closed
+        status_text = "CLOSED"
+
+    status_badge = QFrame(right_container)
+    status_badge.setStyleSheet(
+        f"""
+        QFrame {{
+            background-color: {status_color};
+            border-radius: 10px;
+            min-width: 55px;
+            max-width: 55px;
+            min-height: 20px;
+            max-height: 20px;
+            margin: 0;
+            padding: 0;
+            opacity: 0.5;
+        }}
+        QLabel {{
+            color: white;
+            font-weight: 700;
+            font-size: 11px;
+            background: transparent;
+            padding: 0;
+            margin: 0;
+        }}
+    """
+    )
+
+    status_layout = QHBoxLayout(status_badge)
+    status_layout.setContentsMargins(0, 0, 0, 0)
+    status_layout.setSpacing(0)
+
+    status_label = QLabel(status_text)
+    status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    status_layout.addWidget(status_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    # Container for status badge to ensure center alignment
+    status_container = QWidget()
+    status_container_layout = QHBoxLayout(status_container)
+    status_container_layout.setContentsMargins(0, 0, 0, 0)
+    status_container_layout.addWidget(
+        status_badge, alignment=Qt.AlignmentFlag.AlignCenter
+    )
+    right_layout.addWidget(status_container)
+
+    # Add JSON button
+    json_button = QPushButton("{ }")
+    json_button.setStyleSheet(Styles.PR_CARD_JSON_BUTTON)
+    json_button.setFixedSize(30, 20)  # Made slightly shorter to match status badge
+    json_button.setToolTip("Show PR Data")
+
+    def show_json():
+        dialog = JsonViewDialog(pr.to_dict(), parent)
+        dialog.exec()
+
+    json_button.clicked.connect(show_json)
+
+    # Container for JSON button to ensure center alignment
+    json_container = QWidget()
+    json_container_layout = QHBoxLayout(json_container)
+    json_container_layout.setContentsMargins(0, 0, 0, 0)
+    json_container_layout.addWidget(json_button, alignment=Qt.AlignmentFlag.AlignCenter)
+    right_layout.addWidget(json_container)
+
+    top_row.addWidget(right_container)
     header.addLayout(top_row)
 
     # Add badges
     badges_layout = QHBoxLayout()
     badges_layout.setSpacing(4)
 
+    # Draft badge
+    if getattr(pr, "draft", False):
+        draft_badge = create_badge("DRAFT", "#6c757d", opacity=0.5)
+        badges_layout.addWidget(draft_badge)
+
+    # Approval status badge
+    if hasattr(pr, "timeline") and pr.timeline:
+        latest_review = None
+        for event in reversed(pr.timeline):
+            if event.eventType in ["approved", "changes_requested"]:
+                latest_review = event.eventType
+                break
+
+        if latest_review == "approved":
+            approval_badge = create_badge("APPROVED", "#28a745", opacity=0.5)
+            badges_layout.addWidget(approval_badge)
+        elif latest_review == "changes_requested":
+            changes_badge = create_badge("CHANGES REQUESTED", "#dc3545", opacity=0.5)
+            badges_layout.addWidget(changes_badge)
+
     # Files badge
-    files_count = getattr(pr_data, "changed_files", 0) or 0
+    files_count = getattr(pr, "changed_files", 0) or 0
     if files_count > 0:
-        files_warning = (
-            settings.get("thresholds", {}).get("files", {}).get("warning", 10)
-        )
-        files_danger = settings.get("thresholds", {}).get("files", {}).get("danger", 50)
+        files_warning = settings.thresholds.files.warning
+        files_danger = settings.thresholds.files.danger
 
         if files_count >= files_danger:
             badge_color = "#dc3545"  # Red
@@ -199,16 +304,11 @@ def create_pr_card(pr_data, settings, parent=None):
         badges_layout.addWidget(files_badge)
 
     # Changes badge
-    additions = getattr(pr_data, "additions", 0) or 0
-    deletions = getattr(pr_data, "deletions", 0) or 0
+    additions = getattr(pr, "additions", 0) or 0
+    deletions = getattr(pr, "deletions", 0) or 0
     if additions > 0 or deletions > 0:
         changes_badge = create_changes_badge(additions, deletions, settings)
         badges_layout.addWidget(changes_badge)
-
-    # Draft badge
-    if getattr(pr_data, "draft", False):
-        draft_badge = create_badge("Draft", "#6c757d", opacity=0.5)
-        badges_layout.addWidget(draft_badge)
 
     badges_layout.addStretch()
     header.addLayout(badges_layout)

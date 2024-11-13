@@ -14,22 +14,19 @@ class RefreshWorker(QThread):
 
     def run(self):
         try:
-            print(f"\nDebug - Worker: Starting refresh...")
-            print(f"Debug - Users to fetch: {self.users}")
-
+            print(f"Refreshing data... ${self.github_prs_client}")
             # Get PR data
             data = self.github_prs_client.get_pr_data(self.users)
 
             if data is not None:
-                print("Debug - Successfully fetched PR data")
                 self.progress.emit("Completed refresh")
                 self.finished.emit(data)
             else:
                 error_msg = "No data returned from GitHub API"
-                print(f"Debug - Error: {error_msg}")
+
                 self.error.emit(error_msg)
 
         except Exception as e:
             error_msg = f"Error refreshing data: {str(e)}"
-            print(f"Debug - {error_msg}")
+
             self.error.emit(error_msg)
