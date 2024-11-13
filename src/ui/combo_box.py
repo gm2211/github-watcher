@@ -72,12 +72,11 @@ class MultiSelectComboBox(QComboBox):
                 self.setCurrentText(", ".join(selected))
             else:
                 self.setCurrentText(
-                    f"{selected[0]}, {selected[1]} (+{len(selected)-2})"
+                    f"{selected[0]}, {selected[1]} (+{len(selected) - 2})"
                 )
 
     def addItems(self, items):
         """Add items to the combo box"""
-        print("Adding items {}".format(items))
         new_model = QStandardItemModel()
         self._selected = {self.default_selection}
 
@@ -96,7 +95,10 @@ class MultiSelectComboBox(QComboBox):
 
     def _update_qt_model(self, new_model):
         if self._model:
-            self._model.itemChanged.disconnect(self._on_item_changed)
+            try:
+                self._model.itemChanged.disconnect(self._on_item_changed)
+            except:
+                pass  # Ignore if not connected
             self._model.clear()
         self._model = new_model
         self.setModel(self._model)

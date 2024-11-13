@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+import traceback
 
 
 class SettingsDialog(QDialog):
@@ -190,6 +191,6 @@ class SettingsDialog(QDialog):
             return self.settings
 
         except Exception as e:
-
+            traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to get settings: {str(e)}")
             return None

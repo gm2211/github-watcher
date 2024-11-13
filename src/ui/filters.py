@@ -1,3 +1,4 @@
+import traceback
 from dataclasses import dataclass, field
 from typing import Dict, Set
 
@@ -52,10 +53,10 @@ class FiltersBar(QWidget):
         self.layout.setContentsMargins(16, 8, 16, 8)
         self.layout.setSpacing(16)
 
-        # Create widgets
-        self._setup_search_box()
+        # Create widgets - reordered to put search box last
         self._setup_toggles()
         self._setup_user_filter()
+        self._setup_search_box()
 
         # Add stretch at the end
         self.layout.addStretch()
@@ -74,7 +75,8 @@ class FiltersBar(QWidget):
 
         # Search box
         self.search_box.setPlaceholderText("Filter PRs...")
-        self.search_box.setStyleSheet(f"""
+        self.search_box.setStyleSheet(
+            f"""
             QLineEdit {{
                 background-color: {Colors.BG_DARKEST};
                 border: 1px solid {Colors.BORDER_DEFAULT};
@@ -87,7 +89,8 @@ class FiltersBar(QWidget):
             QLineEdit:focus {{
                 border-color: {Colors.TEXT_LINK};
             }}
-        """)
+        """
+        )
         self.search_box.textChanged.connect(self._on_search_changed)
         search_layout.addWidget(self.search_box)
 
@@ -104,27 +107,27 @@ class FiltersBar(QWidget):
             return True
 
         search_text = self.filter_state.search_text.lower()
-        
+
         # Search in title
         if search_text in pr.title.lower():
             return True
-            
+
         # Search in repo name
         if search_text in pr.repo_name.lower():
             return True
-            
+
         # Search in repo owner
         if search_text in pr.repo_owner.lower():
             return True
-            
+
         # Search in PR number
         if search_text in str(pr.number):
             return True
-            
+
         # Search in author name
-        if hasattr(pr, 'user') and pr.user and search_text in pr.user.login.lower():
+        if hasattr(pr, "user") and pr.user and search_text in pr.user.login.lower():
             return True
-            
+
         return False
 
     def _setup_toggles(self):
@@ -183,6 +186,7 @@ class FiltersBar(QWidget):
 
         except Exception as e:
             print(f"Error updating user filter: {e}")
+            traceback.print_exc()
 
     def get_filter_state(self) -> FilterState:
         """Get current state of all filters"""

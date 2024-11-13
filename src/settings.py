@@ -1,4 +1,5 @@
 import os
+import traceback
 from dataclasses import asdict, dataclass, field
 from typing import List
 from datetime import datetime
@@ -67,9 +68,7 @@ class Settings:
                     deletions=ThresholdPair(
                         **data.get("thresholds", {}).get("deletions", {})
                     ),
-                    age=ThresholdPair(
-                        **data.get("thresholds", {}).get("age", {})
-                    ),
+                    age=ThresholdPair(**data.get("thresholds", {}).get("age", {})),
                     recently_closed_days=data.get("thresholds", {}).get(
                         "recently_closed_days", 7
                     ),
@@ -80,6 +79,7 @@ class Settings:
 
         except Exception as e:
             print(f"Error loading settings: {e}")
+            traceback.print_exc()
             return cls(settings_path=settings_path)
 
     def save(self):

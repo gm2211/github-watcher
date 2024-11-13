@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 from .theme import Styles
 from ..objects import PullRequest
 from ..utils import hex_to_rgba
+import traceback
 
 
 class JsonViewDialog(QDialog):
