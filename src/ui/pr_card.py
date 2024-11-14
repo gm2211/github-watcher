@@ -328,8 +328,17 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     if pr.last_comment_time:
         time_since_last_comment = datetime.now().astimezone() - pr.last_comment_time
 
+        # Determine color based on thresholds
+        tslc_badge_color = compute_color(
+            time_since_last_comment.days,
+            settings.thresholds.time_since_comment.warning.to_days(),
+            settings.thresholds.time_since_comment.danger.to_days(),
+        )
+
         time_since_last_comment_badge = create_badge(
-            f"TSLC: {format_time(time_since_last_comment)}", Colors.INFO, opacity=0.5
+            f"TSLC: {format_time(time_since_last_comment)}", 
+            tslc_badge_color, 
+            opacity=0.5
         )
         time_since_last_comment_badge.setToolTip(
             f"Time Since Last Comment: {format_time(time_since_last_comment)}\n"

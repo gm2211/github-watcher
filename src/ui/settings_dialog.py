@@ -223,6 +223,50 @@ class SettingsDialog(QDialog):
 
         thresholds_layout.addWidget(ttm_group)
 
+        # Add Time Since Last Comment thresholds
+        tslc_group = QGroupBox("Time Since Last Comment Thresholds")
+        tslc_layout = QFormLayout(tslc_group)
+
+        # Warning threshold
+        warning_container = QWidget()
+        warning_layout = QHBoxLayout(warning_container)
+        warning_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.tslc_warning_value = QSpinBox()
+        self.tslc_warning_value.setRange(1, 90)
+        self.tslc_warning_value.setValue(self.settings.thresholds.time_since_comment.warning.value)
+        warning_layout.addWidget(self.tslc_warning_value)
+
+        self.tslc_warning_unit = QComboBox()
+        self.tslc_warning_unit.addItems(["minutes", "hours", "days"])
+        index = self.tslc_warning_unit.findText(self.settings.thresholds.time_since_comment.warning.unit)
+        if index >= 0:
+            self.tslc_warning_unit.setCurrentIndex(index)
+        warning_layout.addWidget(self.tslc_warning_unit)
+
+        tslc_layout.addRow("Warning Level:", warning_container)
+
+        # Danger threshold
+        danger_container = QWidget()
+        danger_layout = QHBoxLayout(danger_container)
+        danger_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.tslc_danger_value = QSpinBox()
+        self.tslc_danger_value.setRange(1, 90)
+        self.tslc_danger_value.setValue(self.settings.thresholds.time_since_comment.danger.value)
+        danger_layout.addWidget(self.tslc_danger_value)
+
+        self.tslc_danger_unit = QComboBox()
+        self.tslc_danger_unit.addItems(["minutes", "hours", "days"])
+        index = self.tslc_danger_unit.findText(self.settings.thresholds.time_since_comment.danger.unit)
+        if index >= 0:
+            self.tslc_danger_unit.setCurrentIndex(index)
+        danger_layout.addWidget(self.tslc_danger_unit)
+
+        tslc_layout.addRow("Danger Level:", danger_container)
+
+        thresholds_layout.addWidget(tslc_group)
+
         thresholds_layout.addStretch()
 
         tabs.addTab(thresholds_tab, "Thresholds")
@@ -273,6 +317,14 @@ class SettingsDialog(QDialog):
             self.settings.thresholds.time_to_merge.danger = TimeValue(
                 value=self.ttm_danger_value.value(),
                 unit=self.ttm_danger_unit.currentText()
+            )
+            self.settings.thresholds.time_since_comment.warning = TimeValue(
+                value=self.tslc_warning_value.value(),
+                unit=self.tslc_warning_unit.currentText()
+            )
+            self.settings.thresholds.time_since_comment.danger = TimeValue(
+                value=self.tslc_danger_value.value(),
+                unit=self.tslc_danger_unit.currentText()
             )
 
             # Save settings

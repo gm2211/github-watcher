@@ -45,8 +45,9 @@ class GitHubPRsClient:
         # Define section-specific queries
         self.section_queries = {
             PRSection.OPEN: PRQueryConfig(query="is:pr is:open"),
+            # TODO instead of comments:0 we should look at the last comment date
             PRSection.NEEDS_REVIEW: PRQueryConfig(
-                query="is:pr is:open review:none -draft:true"
+                query="is:pr is:open review:none comments:0 -draft:true"
             ),
             PRSection.CHANGED_REQUESTED: PRQueryConfig(
                 query="is:pr is:open review:changes_requested -draft:true"

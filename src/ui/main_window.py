@@ -212,6 +212,13 @@ class MainWindow(QMainWindow):
             # Get current filter state
             filter_state: FilterState = self.filter_bar.get_filter_state()
 
+            # First get needs review PRs to filter them out from open PRs
+            needs_review_data, _ = self.ui_state.get_pr_data(SectionName.NEEDS_REVIEW)
+            needs_review_numbers = set()
+            if needs_review_data:
+                for prs in needs_review_data.values():
+                    needs_review_numbers.update(pr.number for pr in prs)
+
             # Update each section with filtered data
             for frame in [
                 self.open_prs_frame,
@@ -230,6 +237,15 @@ class MainWindow(QMainWindow):
                         item = frame.content_layout.takeAt(0)
                         if widget := item.widget():
                             widget.deleteLater()
+
+                # Filter out needs review PRs from open PRs section
+                if frame.name == SectionName.OPEN_PRS:
+                    filtered_data = {}
+                    for user, prs in pr_data.items():
+                        filtered_prs = [pr for pr in prs if pr.number not in needs_review_numbers]
+                        if filtered_prs:
+                            filtered_data[user] = filtered_prs
+                    pr_data = filtered_data
 
                 # Filter PRs
                 filtered_prs = self.filter_bar.filter_prs_grouped_by_users(pr_data)
@@ -268,7 +284,7 @@ class MainWindow(QMainWindow):
 
                 else:
                     # Flat visualization (no grouping)
-                    all_prs: [PullRequest] = filtered_prs.get("all", [])
+                    all_prs = filtered_prs.get("all", [])
                     for pr in all_prs:
                         card = create_pr_card(pr, self.settings)
                         frame.content_layout.addWidget(card)

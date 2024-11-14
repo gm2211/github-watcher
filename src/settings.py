@@ -45,6 +45,12 @@ class Thresholds:
         )
     )
     time_to_merge: TimeThreshold = field(default_factory=TimeThreshold)
+    time_since_comment: TimeThreshold = field(
+        default_factory=lambda: TimeThreshold(
+            warning=TimeValue(2, "days"),
+            danger=TimeValue(5, "days")
+        )
+    )
     recently_closed_days: int = 7
 
 
@@ -123,6 +129,16 @@ class Settings:
                     ),
                     age=age,
                     time_to_merge=time_to_merge,
+                    time_since_comment=TimeThreshold(
+                        warning=TimeValue(
+                            value=thresholds_data.get("time_since_comment", {}).get("warning", {}).get("value", 2),
+                            unit=thresholds_data.get("time_since_comment", {}).get("warning", {}).get("unit", "days")
+                        ),
+                        danger=TimeValue(
+                            value=thresholds_data.get("time_since_comment", {}).get("danger", {}).get("value", 5),
+                            unit=thresholds_data.get("time_since_comment", {}).get("danger", {}).get("unit", "days")
+                        )
+                    ),
                     recently_closed_days=thresholds_data.get(
                         "recently_closed_days", 7
                     ),
@@ -149,6 +165,7 @@ class Settings:
                     "deletions": asdict(self.thresholds.deletions),
                     "age": asdict(self.thresholds.age),
                     "time_to_merge": asdict(self.thresholds.time_to_merge),
+                    "time_since_comment": asdict(self.thresholds.time_since_comment),
                     "recently_closed_days": self.thresholds.recently_closed_days,
                 },
             }
