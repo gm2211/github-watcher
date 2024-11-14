@@ -1,7 +1,7 @@
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 
 @dataclass
@@ -294,6 +294,13 @@ class PullRequest:
     changed_files: Optional[int] = None
     additions: Optional[int] = None
     deletions: Optional[int] = None
+    comment_count_by_author: Optional[Dict[str, int]] = None
+    last_comment_time: Optional[str] = None
+    last_comment_author: Optional[str] = None
+    approved_by: Optional[List[str]] = None
+    latest_reviews: Optional[Dict[str, str]] = None
+    merged: bool = False
+    merged_by: Optional[str] = None
 
     def to_dict(self):
         """Convert PullRequest to a dictionary for serialization"""
@@ -320,6 +327,13 @@ class PullRequest:
                 "changed_files": self.changed_files,
                 "additions": self.additions,
                 "deletions": self.deletions,
+                "comment_count_by_author": self.comment_count_by_author,
+                "last_comment_time": self.last_comment_time,
+                "last_comment_author": self.last_comment_author,
+                "approved_by": self.approved_by,
+                "latest_reviews": self.latest_reviews,
+                "merged": self.merged,
+                "merged_by": self.merged_by,
             }
         except Exception as e:
             print(f"Error converting PR to dict: {e}")
@@ -342,17 +356,22 @@ class PullRequest:
                 "changed_files": None,
                 "additions": None,
                 "deletions": None,
+                "comment_count_by_author": None,
+                "last_comment_time": None,
+                "last_comment_author": None,
+                "approved_by": None,
+                "latest_reviews": None,
+                "merged": False,
+                "merged_by": None,
             }
 
     @staticmethod
     def parse_pr(pr_data: dict) -> "PullRequest":
         """Create PullRequest from a dictionary"""
         try:
-
             # Parse timeline if present
             timeline = None
             if timeline_data := pr_data.get("timeline"):
-
                 timeline = [
                     TimelineEvent.parse_event(event) for event in timeline_data if event
                 ]
@@ -370,7 +389,7 @@ class PullRequest:
                 updated_at=pr_data["updated_at"],
                 closed_at=pr_data.get("closed_at"),
                 merged_at=pr_data.get("merged_at"),
-                draft=pr_data.get("draft", False),  # Default to False if not present
+                draft=pr_data.get("draft", False),
                 user=User.parse(pr_data["user"]),
                 html_url=pr_data["html_url"],
                 repo_owner=pr_data["repo_owner"],
@@ -379,6 +398,13 @@ class PullRequest:
                 changed_files=pr_data.get("changed_files"),
                 additions=pr_data.get("additions"),
                 deletions=pr_data.get("deletions"),
+                comment_count_by_author=pr_data.get("comment_count_by_author"),
+                last_comment_time=pr_data.get("last_comment_time"),
+                last_comment_author=pr_data.get("last_comment_author"),
+                approved_by=pr_data.get("approved_by"),
+                latest_reviews=pr_data.get("latest_reviews"),
+                merged=pr_data.get("merged", False),
+                merged_by=pr_data.get("merged_by"),
             )
 
             return pr

@@ -82,18 +82,19 @@ class GitHubPRsClient:
 
         return events
 
-    def _fetch_user_prs(self, user, query, max_results):
+    def _search_for_user_prs(self, user, query, max_results):
         """Helper method to fetch PRs for a single user"""
         try:
             user_query = f"{query} author:{user}"
-            results = self._search_issues(user_query, max_results)
+            results = self._search_prs(user_query, max_results)
             return user, results
         except Exception as e:
             print(f"Error fetching PRs for {user}: {e}")
+            traceback.print_exc()
             return user, []
 
-    def _search_issues(self, query, max_results=None) -> list[PullRequest]:
-        """Search issues and pull requests using the given query."""
+    def _search_prs(self, query, max_results=None) -> list[PullRequest]:
+        """Search issues and pull requests using the given query - we assume all matching issues are PRs."""
         endpoint = "/search/issues"
         params = {"q": query, "per_page": 100}
         results = []
@@ -150,6 +151,7 @@ class GitHubPRsClient:
                                         f"(value: {date_val},"
                                         f" type: {type(date_val)})"
                                     )
+                                    traceback.print_exc()
                                     item[date_field] = None
 
                         # Parse PR
@@ -159,6 +161,7 @@ class GitHubPRsClient:
 
                     except Exception as e:
                         print(f"Warning: Error parsing PR item: {e}")
+                        traceback.print_exc()
                         continue
 
                 if max_results and len(results) >= max_results:
@@ -174,6 +177,7 @@ class GitHubPRsClient:
 
         except Exception as e:
             print(f"Error in _search_issues: {e}")
+            traceback.print_exc()
             return []
 
     def get_pr_details(self, repo_owner, repo_name, pr_number):
@@ -199,6 +203,7 @@ class GitHubPRsClient:
                     print(
                         f"Warning: Error parsing date {date_field}: {e} (value: {date_val}, type: {type(date_val)})"
                     )
+                    traceback.print_exc()
                     data[date_field] = None
 
         # Add repo info if not present
@@ -209,40 +214,113 @@ class GitHubPRsClient:
 
         return data
 
-    def _fetch_pr_details(self, pr):
+    def _fetch_and_enrich_with_pr_details(self, pr: PullRequest):
         """Helper method to fetch details for a single PR"""
         try:
+            # Get basic PR details
             details = self.get_pr_details(pr.repo_owner, pr.repo_name, pr.number)
             if details:
                 pr.changed_files = details.get("changed_files")
                 pr.additions = details.get("additions")
                 pr.deletions = details.get("deletions")
                 pr.merged_at = details.get("merged_at")
-                pr.merged = details.get("merged", False)
-                pr.mergeable = details.get("mergeable")
-                pr.mergeable_state = details.get("mergeable_state")
-                pr.merge_commit_sha = details.get("merge_commit_sha")
-                pr.comments = details.get("comments", 0)
-                pr.review_comments = details.get("review_comments", 0)
-                pr.commits = details.get("commits", 0)
-                pr.maintainer_can_modify = details.get("maintainer_can_modify")
-                pr.draft = details.get("draft", False)
-                pr.author_association = details.get("author_association")
-                if head := details.get("head"):
-                    pr.head_ref = head.get("ref")
-                    pr.head_sha = head.get("sha")
-                if base := details.get("base"):
-                    pr.base_ref = base.get("ref")
-                    pr.base_sha = base.get("sha")
+                pr.merged = details.get("merged", False)  # Add merged status
+                pr.merged_by = (
+                    details.get("merged_by", {}).get("login")
+                    if details.get("merged_by")
+                    else None
+                )
+
+            # Get comments and reviews
+            comments_url = f"{self.base_url}/repos/{pr.repo_owner}/{pr.repo_name}/issues/{pr.number}/comments"
+            reviews_url = f"{self.base_url}/repos/{pr.repo_owner}/{pr.repo_name}/pulls/{pr.number}/reviews"
+
+            # Fetch comments and reviews in parallel
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                comments_future = executor.submit(
+                    requests.get, comments_url, headers=self.headers
+                )
+                reviews_future = executor.submit(
+                    requests.get, reviews_url, headers=self.headers
+                )
+
+                comments_response = comments_future.result()
+                reviews_response = reviews_future.result()
+
+            comments = (
+                comments_response.json() if comments_response.status_code == 200 else []
+            )
+            reviews = (
+                reviews_response.json() if reviews_response.status_code == 200 else []
+            )
+
+            # Process comments
+            comment_count_by_author = {}
+            last_comment_time = None
+            last_comment_author = None
+
+            for comment in sorted(comments, key=lambda x: x["created_at"]):
+                author = comment["user"]["login"]
+                comment_count_by_author[author] = (
+                    comment_count_by_author.get(author, 0) + 1
+                )
+
+                comment_time = datetime.fromisoformat(
+                    comment["created_at"].replace("Z", "+00:00")
+                )
+                if last_comment_time is None or comment_time > last_comment_time:
+                    last_comment_time = comment_time
+                    last_comment_author = author
+
+            # Process reviews
+            approved_by = set()
+            latest_reviews = {}  # Track latest review by each reviewer
+            for review in reviews:
+                reviewer = review["user"]["login"]
+                review_time = datetime.fromisoformat(
+                    review["submitted_at"].replace("Z", "+00:00")
+                )
+
+                # Update latest review for this reviewer
+                if (
+                    reviewer not in latest_reviews
+                    or review_time > latest_reviews[reviewer][0]
+                ):
+                    latest_reviews[reviewer] = (review_time, review["state"].lower())
+
+                # Track approvals
+                if review["state"].lower() == "approved":
+                    approved_by.add(reviewer)
+
+            # Add new attributes to PR
+            pr.comment_count_by_author = comment_count_by_author
+            pr.last_comment_time = (
+                last_comment_time.isoformat() if last_comment_time else None
+            )
+            pr.last_comment_author = last_comment_author
+            pr.approved_by = list(approved_by)
+            pr.latest_reviews = {
+                reviewer: state for reviewer, (_, state) in latest_reviews.items()
+            }
+
             return pr
+
         except Exception as e:
             print(f"Warning: Error fetching details for PR #{pr.number}: {e}")
+            traceback.print_exc()
+            # Set default values on error
+            pr.comment_count_by_author = {}
+            pr.last_comment_time = None
+            pr.last_comment_author = None
+            pr.approved_by = []
+            pr.latest_reviews = {}
+            pr.merged = False
+            pr.merged_by = None
             return pr
 
     def get_pr_data(self, users, section: PRSection = None):
         """Get PR data from GitHub API with parallel processing"""
         if self._shutdown:
-            print("Client is shutting down, aborting PR data fetch")
             return {}, {}, {}, {}
 
         try:
@@ -273,7 +351,9 @@ class GitHubPRsClient:
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 # Fetch PRs for all users in parallel
                 futures = [
-                    executor.submit(self._fetch_user_prs, user, query_config.query, 100)
+                    executor.submit(
+                        self._search_for_user_prs, user, query_config.query, 100
+                    )
                     for user in users
                 ]
 
@@ -285,7 +365,7 @@ class GitHubPRsClient:
                     if user_prs:
                         # Fetch PR details in parallel
                         detail_futures = [
-                            executor.submit(self._fetch_pr_details, pr)
+                            executor.submit(self._fetch_and_enrich_with_pr_details, pr)
                             for pr in user_prs
                         ]
 
@@ -305,6 +385,7 @@ class GitHubPRsClient:
 
         except Exception as e:
             print(f"Error fetching section data: {e}")
+            traceback.print_exc()
             return {}
 
     @staticmethod
