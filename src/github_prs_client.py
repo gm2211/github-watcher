@@ -385,6 +385,8 @@ class GitHubPRsClient:
 
                 return section_results
 
+        except RuntimeError("cannot schedule new futures after shutdown"):
+            return {}
         except Exception as e:
             print(f"Error fetching section data: {e}")
             traceback.print_exc()

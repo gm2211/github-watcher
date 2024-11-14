@@ -1,6 +1,7 @@
 import json
 import webbrowser
 from datetime import datetime
+from typing import Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -19,7 +20,6 @@ from PyQt6.QtWidgets import (
 from .themes import Colors, Styles
 from ..objects import PullRequest
 from ..utils import hex_to_rgba
-import traceback
 
 
 class JsonViewDialog(QDialog):
@@ -107,23 +107,23 @@ def create_changes_badge(additions, deletions, settings):
     return changes_badge
 
 
-def format_time_ago(delta) -> str:
+def format_time(delta, suffix="") -> str:
     """Format a timedelta into a human readable string"""
     total_seconds = int(delta.total_seconds())
 
     if total_seconds < 60:
-        return f"{total_seconds} seconds old"
+        return f"{total_seconds} secs{suffix}"
 
     minutes = total_seconds // 60
     if minutes < 60:
-        return f"{minutes} minutes old"
+        return f"{minutes} mins{suffix}"
 
     hours = minutes // 60
     if hours < 24:
-        return f"{hours} hours old"
+        return f"{hours} hrs{suffix}"
 
     days = hours // 24
-    return f"{days} days old"
+    return f"{days} days{suffix}"
 
 
 def calculate_pr_age_days(pr: PullRequest) -> tuple[int, str]:
@@ -145,7 +145,17 @@ def calculate_pr_age_days(pr: PullRequest) -> tuple[int, str]:
     delta = now - created_at
     days = delta.days
 
-    return days, format_time_ago(delta)
+    return days, format_time(delta, suffix=" old")
+
+
+def calculate_merge_duration(pr: PullRequest) -> Optional[str]:
+    """Calculate the duration it took to merge the PR."""
+    if pr.created_at and pr.merged_at:
+        created_at = datetime.fromisoformat(pr.created_at.replace("Z", "+00:00"))
+        merged_at = datetime.fromisoformat(pr.merged_at.replace("Z", "+00:00"))
+        duration = merged_at - created_at
+        return format_time(duration)
+    return None
 
 
 def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
@@ -208,16 +218,10 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     info_layout.setSpacing(2)
 
     # Repository info
-    repo_text = f"{pr.repo_owner}/{pr.repo_name}"
+    repo_text = f"{pr.repo_owner}/{pr.repo_name} | author: {pr.user.login if pr.user else 'N/A'}"
     repo_label = QLabel(repo_text)
     repo_label.setStyleSheet(Styles.PR_CARD_LABELS)
     info_layout.addWidget(repo_label)
-
-    # Author info
-    if pr.user:
-        author_label = QLabel(f"author: {pr.user.login}")
-        author_label.setStyleSheet(Styles.PR_CARD_LABELS)
-        info_layout.addWidget(author_label)
 
     # Author info
     if pr.approved_by:
@@ -320,6 +324,14 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
 
     age_badge = create_badge(age_text, badge_color, opacity=0.5)
     bottom_layout.addWidget(age_badge)
+
+    # Add merge duration badge if PR is merged
+    if pr.merged_at:
+        merge_duration = calculate_merge_duration(pr)
+        merge_duration_badge = create_badge(
+            f"TTM: {merge_duration}", Colors.SUCCESS_BG, opacity=0.5
+        )
+        bottom_layout.addWidget(merge_duration_badge)
 
     bottom_layout.addStretch()
     header.addLayout(bottom_layout)
