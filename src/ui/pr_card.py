@@ -314,18 +314,19 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
         changes_badge = create_changes_badge(additions, deletions, settings)
         bottom_layout.addWidget(changes_badge)
 
+    # Comment count badge
+    comment_count_badge = create_badge(
+        f"{sum(pr.comment_count_by_author.values())} comments", "#007bff", opacity=0.5
+    )
+    bottom_layout.addWidget(comment_count_badge)
+
     # Age badge
     age_days, age_text = calculate_pr_age_days(pr)
 
-    # Convert days to the same unit as the thresholds
-    age_thresholds = settings.thresholds.age
-    warning_days = age_thresholds.warning.to_days()
-    danger_days = age_thresholds.danger.to_days()
-
     # Determine color based on thresholds
-    if age_days >= danger_days:
+    if age_days >= settings.thresholds.age.danger.to_days():
         badge_color = "#dc3545"  # Red
-    elif age_days >= warning_days:
+    elif age_days >= settings.thresholds.age.warning.to_days():
         badge_color = "#ffc107"  # Yellow
     else:
         badge_color = "#28a745"  # Green
