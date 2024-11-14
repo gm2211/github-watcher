@@ -1,8 +1,8 @@
 import traceback
+from typing import Dict
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
-    QApplication,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -14,28 +14,34 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.github_prs_client import GitHubPRsClient
+from src.github_prs_client import GitHubPRsClient, PRSection
 from src.notifications import notify
-from src.settings import Settings
-from src.ui.filters import FiltersBar
+from src.objects import PullRequest
+from src.settings import RefreshInterval, Settings
+from src.ui.filters import FiltersBar, FilterState
 from src.ui.pr_card import create_pr_card
 from src.ui.refresh_worker import RefreshWorker
 from src.ui.section_frame import SectionFrame
 from src.ui.settings_dialog import SettingsDialog
-from src.ui.state import UIState
-from src.ui.theme import Styles
+from src.ui.ui_state import SectionName, UIState
+from src.ui.themes import Colors, Styles
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, state, settings: Settings):
+
+    def __init__(
+        self, github_prs_client: GitHubPRsClient, ui_state: UIState, settings: Settings
+    ):
         super().__init__()
-        self.auto_refresh_timer: QTimer | None = None
-        self.state = state
+        self.github_prs_client = github_prs_client
+        self.ui_state: UIState = ui_state
         self.settings = settings
+        self.auto_refresh_timer: QTimer | None = None
         self.setWindowTitle("GitHub PR Watcher")
         self.setStyleSheet(Styles.MAIN_WINDOW)
         self.workers = []
         self.refresh_worker = None
+        self.is_refreshing = False
 
         # Create central widget and main layout
         central_widget = QWidget()
@@ -45,14 +51,18 @@ class MainWindow(QMainWindow):
         self.main_layout.setSpacing(10)
 
         # Create section frames first
-        self.needs_review_frame = SectionFrame("Needs Review", self.state)
-        self.changes_requested_frame = SectionFrame("Changes Requested", self.state)
-        self.open_prs_frame = SectionFrame("Open PRs", self.state)
-        self.recently_closed_frame = SectionFrame("Recently Closed", self.state)
+        self.needs_review_frame = SectionFrame(SectionName.NEEDS_REVIEW, self.ui_state)
+        self.changes_requested_frame = SectionFrame(
+            SectionName.CHANGES_REQUESTED, self.ui_state
+        )
+        self.open_prs_frame = SectionFrame(SectionName.OPEN_PRS, self.ui_state)
+        self.recently_closed_frame = SectionFrame(
+            SectionName.RECENTLY_CLOSED, self.ui_state
+        )
 
         # Create header with buttons and filters
         header_container = QWidget()
-        header_container.setObjectName("headerContainer")
+        header_container.setObjectName(Styles.HEADER_CONTAINER_CSS_NAME)
         header_container.setStyleSheet(Styles.HEADER)
 
         # Create a vertical layout for header + filters
@@ -70,14 +80,14 @@ class MainWindow(QMainWindow):
         left_layout.setSpacing(8)
 
         # Loading indicator
-        self.loading_label = QLabel("Loading...")
-        self.loading_label.setObjectName("loadingLabel")
+        self.loading_label = QLabel("Refreshing Data...")
+        self.loading_label.setObjectName(Styles.LOADING_LABEL_CSS_NAME)
         self.loading_label.hide()
         left_layout.addWidget(self.loading_label)
 
         # Title
         title = QLabel("GitHub PR Watcher")
-        title.setObjectName("headerTitle")
+        title.setObjectName(Styles.HEADER_TITLE_CSS_NAME)
         left_layout.addWidget(title)
 
         header_layout.addLayout(left_layout)
@@ -92,9 +102,9 @@ class MainWindow(QMainWindow):
         header_vertical.addWidget(header_content)
 
         # Create and add filters
-        self.filters = FiltersBar()
-        self.filters.filtersChanged.connect(self._on_filters_changed)
-        header_vertical.addWidget(self.filters)
+        self.filter_bar = FiltersBar()
+        self.filter_bar.filters_changed_signal.connect(self.apply_filters)
+        header_vertical.addWidget(self.filter_bar)
 
         # Add header container to main layout
         self.main_layout.addWidget(header_container)
@@ -117,16 +127,13 @@ class MainWindow(QMainWindow):
         scroll_layout.addWidget(self.recently_closed_frame, 1)
 
         scroll_area.setWidget(scroll_widget)
+
         self.main_layout.addWidget(scroll_area, 1)
 
-        # Load and display saved PR data
-        open_prs, _ = self.state.get_pr_data("open")
-        needs_review, _ = self.state.get_pr_data("review")
-        changes_requested, _ = self.state.get_pr_data("attention")
-        recently_closed, _ = self.state.get_pr_data("closed")
-
-        # Update UI with saved data
-        self.update_pr_lists(open_prs, needs_review, changes_requested, recently_closed)
+        # Populate data and setup background refresh
+        self.populate_users_filter()
+        self.apply_filters()
+        self.setup_or_reset_refresh_timer(settings.refresh)
 
     def _setup_buttons(self, buttons_layout):
         """Setup the header buttons"""
@@ -138,14 +145,14 @@ class MainWindow(QMainWindow):
         buttons_layout.addWidget(test_notif_btn)
 
         # Refresh button
-        refresh_btn = QPushButton("↻ Refresh")
+        refresh_btn = QPushButton("🔄 Refresh")
         refresh_btn.clicked.connect(self.refresh_data)
         refresh_btn.setFixedWidth(80)
         refresh_btn.setStyleSheet(Styles.BUTTON)
         buttons_layout.addWidget(refresh_btn)
 
         # Settings button
-        settings_btn = QPushButton("⚙ Settings")
+        settings_btn = QPushButton("⚙️ Settings")
         settings_btn.clicked.connect(self.show_settings)
         settings_btn.setFixedWidth(80)
         settings_btn.setStyleSheet(Styles.BUTTON)
@@ -167,7 +174,6 @@ class MainWindow(QMainWindow):
                 if settings:
                     self._apply_settings_changes(settings)
         except Exception as e:
-            print(f"Error showing settings: {e}")
             QMessageBox.critical(self, "Error", f"Failed to show settings: {str(e)}")
 
     def _apply_settings_changes(self, new_settings):
@@ -177,224 +183,192 @@ class MainWindow(QMainWindow):
                 return
 
             # Get current settings from the Settings instance
-            current_settings = self.settings
+            previous_settings = self.settings
 
             # Compare refresh settings
-            old_refresh = current_settings.get("refresh", {})
-            new_refresh = new_settings.get("refresh", {})
-            if old_refresh != new_refresh:
-                self._update_refresh_timer(new_refresh)
+            if previous_settings.refresh != new_settings.refresh:
+                self.setup_or_reset_refresh_timer(new_settings.refresh)
 
             # Store new settings
-            self.settings = new_settings  # new_settings is a Settings instance
+            self.settings = new_settings
+            self.populate_users_filter()
 
             # Update user filter and refresh data if users changed
-            if new_settings.get("users") != current_settings.get("users"):
-                self.populate_users_filter()
-                self.refresh_data()
+            if new_settings.users != previous_settings.users:
+                self.refresh_data()  # This will also apply filters / update UI
             else:
-                # Just update UI for threshold changes
-                self._update_ui_with_current_data()
+                # Even if users haven't changed, we should reapply filters
+                # because thresholds might have changed
+                self.apply_filters()
 
         except Exception as e:
-            print(f"Error applying settings changes: {e}")
-            traceback.print_exc()  # Print full stack trace for debugging
+            print(f"Error applying settings: {e}")
+            traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to apply settings: {str(e)}")
 
-    def _on_filters_changed(self, filter_state):
-        """Handle filter changes"""
-        print("\nDebug - Filters changed:", filter_state)
+    def apply_filters(self):
+        """Apply filters and update UI"""
         try:
-            # Get current data for each section
-            open_prs, _ = self.state.get_pr_data("open")
-            needs_review, _ = self.state.get_pr_data("review")
-            changes_requested, _ = self.state.get_pr_data("attention")
-            recently_closed, _ = self.state.get_pr_data("closed")
+            # Get current filter state
+            filter_state: FilterState = self.filter_bar.get_filter_state()
 
-            # Apply filters with current data
-            self.apply_filters(
-                open_prs,
-                needs_review,
-                changes_requested,
-                recently_closed
-            )
-        except Exception as e:
-            print(f"Error handling filter change: {e}")
-            traceback.print_exc()
-
-    def apply_filters(
-        self,
-        open_prs=None,
-        needs_review=None,
-        needs_attention=None,
-        recently_closed=None,
-    ):
-        """Apply filters to PR lists"""
-        print("\nDebug - Applying filters")
-        try:
-            filter_state = self.filters.get_filter_state()
-            print(f"Debug - Filter state: {filter_state}")
+            # First get needs review PRs to filter them out from open PRs
+            needs_review_data, _ = self.ui_state.get_pr_data(SectionName.NEEDS_REVIEW)
+            needs_review_numbers = set()
+            if needs_review_data:
+                for prs in needs_review_data.values():
+                    needs_review_numbers.update(pr.number for pr in prs)
 
             # Update each section with filtered data
-            sections = [
-                ("Open PRs", self.open_prs_frame, open_prs),
-                ("Needs Review", self.needs_review_frame, needs_review),
-                ("Changes Requested", self.changes_requested_frame, needs_attention),
-                ("Recently Closed", self.recently_closed_frame, recently_closed),
-            ]
+            for frame in [
+                self.open_prs_frame,
+                self.needs_review_frame,
+                self.changes_requested_frame,
+                self.recently_closed_frame,
+            ]:
+                # Get PR data - returns tuple of (data, timestamp)
+                pr_data, _ = self.ui_state.get_pr_data(frame.name)
+                if pr_data is None:
+                    continue
 
-            for title, frame, data in sections:
-                print(f"\nDebug - Updating section: {title}")
-                if data is not None:
-                    self._update_section(frame, data, filter_state)
+                # Clear existing content
+                if frame.content_layout:
+                    while frame.content_layout.count():
+                        item = frame.content_layout.takeAt(0)
+                        if widget := item.widget():
+                            widget.deleteLater()
+
+                # Filter out needs review PRs from open PRs section
+                if frame.name == SectionName.OPEN_PRS:
+                    filtered_data = {}
+                    for user, prs in pr_data.items():
+                        filtered_prs = [pr for pr in prs if pr.number not in needs_review_numbers]
+                        if filtered_prs:
+                            filtered_data[user] = filtered_prs
+                    pr_data = filtered_data
+
+                # Filter PRs
+                filtered_prs = self.filter_bar.filter_prs_grouped_by_users(pr_data)
+                total_prs = 0
+
+                if filter_state.group_by_user:
+                    # Group by user visualization
+                    for user, user_prs in filtered_prs.items():
+                        if not user_prs:
+                            continue
+
+                        # Add user header
+                        user_header = QLabel(f"Author: {user}")
+                        user_header.setStyleSheet(
+                            f"""
+                            QLabel {{
+                                color: {Colors.TEXT_SECONDARY};
+                                font-size: 12px;
+                                font-weight: bold;
+                                padding: 5px 0;
+                            }}
+                            """
+                        )
+                        frame.content_layout.addWidget(user_header)
+
+                        # Add PR cards for this user
+                        for pr in user_prs:
+                            card = create_pr_card(pr, self.settings)
+                            frame.content_layout.addWidget(card)
+                            total_prs += 1
+
+                        # Add spacing between user sections
+                        spacer = QWidget()
+                        spacer.setFixedHeight(10)
+                        frame.content_layout.addWidget(spacer)
+
+                else:
+                    # Flat visualization (no grouping)
+                    all_prs = filtered_prs.get("all", [])
+                    for pr in all_prs:
+                        card = create_pr_card(pr, self.settings)
+                        frame.content_layout.addWidget(card)
+                        total_prs += 1
+
+                # Add stretch at the end
+                frame.content_layout.addStretch()
+
+                # Update count
+                frame.update_count(total_prs)
+
         except Exception as e:
             print(f"Error applying filters: {e}")
             traceback.print_exc()
 
-    def _update_section(self, frame, pr_data, filter_state):
-        """Update a section with filtered PR data"""
-        print(f"\nDebug - Updating section: {frame.title}")
-        try:
-            # Clear existing content
-            if frame.content_layout:
-                while frame.content_layout.count():
-                    item = frame.content_layout.takeAt(0)
-                    if widget := item.widget():
-                        widget.deleteLater()
-
-            # Filter and group PRs
-            filtered_prs = _filter_prs(pr_data, filter_state)
-
-            # Update count
-            frame.update_count(len(filtered_prs))
-
-            # Create PR cards
-            for pr in filtered_prs:
-                card = create_pr_card(pr, self.settings)
-                frame.content_layout.addWidget(card)
-
-            frame.content_layout.addStretch()
-
-        except Exception as e:
-            print(f"Error updating section {frame.title}: {e}")
-
     def populate_users_filter(self):
         """Update the user filter with current users"""
         try:
-            users = self.settings.get("users", [])
-            self.filters.update_user_filter(users)
+            self.filter_bar.update_user_filter(self.settings.users)
         except Exception as e:
             print(f"Error updating user filter: {e}")
+            traceback.print_exc()
 
     def refresh_data(self):
         """Refresh PR data"""
-        if (
-            hasattr(self, "refresh_worker")
-            and self.refresh_worker
-            and self.refresh_worker.isRunning()
-        ):
-            print("Debug - Refresh already in progress")
+        if self.is_refreshing:
             return
 
         try:
-            users = self.settings.get("users", [])
+            users = self.settings.users
             if not users:
-                print("Debug - No users configured")
                 return
 
-            self.refresh_worker = RefreshWorker(self.github_prs_client, users)
+            self.is_refreshing = True
+            self._show_loading_state()
+
+            self.refresh_worker = RefreshWorker(
+                self.github_prs_client,
+                users,
+                settings=self.settings,  # Pass settings to worker
+            )
             self.refresh_worker.finished.connect(self._handle_refresh_complete)
             self.refresh_worker.error.connect(self._handle_refresh_error)
             self.workers.append(self.refresh_worker)
             self.refresh_worker.start()
 
-            self._show_loading_state()
-
         except Exception as e:
-            print(f"Error starting refresh: {e}")
             self._handle_refresh_error(str(e))
-
-    def update_pr_lists(
-        self,
-        open_prs_by_user=None,
-        prs_awaiting_review_by_user=None,
-        prs_that_need_attention_by_user=None,
-        user_recently_closed_prs_by_user=None,
-    ):
-        """Update all PR lists"""
-        print("\nDebug - Updating PR lists")
-
-        # Apply filters
-        self.apply_filters(
-            open_prs_by_user,
-            prs_awaiting_review_by_user,
-            prs_that_need_attention_by_user,
-            user_recently_closed_prs_by_user,
-        )
-
-        # Save UI state after updating lists
-        try:
-            print("\nDebug - Saving UI state after updating lists")
-
-            for section in [
-                ("Needs Review", self.needs_review_frame),
-                ("Changes Requested", self.changes_requested_frame),
-                ("Open PRs", self.open_prs_frame),
-                ("Recently Closed", self.recently_closed_frame),
-            ]:
-                title, frame = section
-                key = f"section_{title}_expanded"
-                self.state.settings[key] = frame.is_expanded
-                print(f"Debug - Saving {key}={frame.is_expanded}")
-
-            self.state.save()
-            print("Debug - UI state saved successfully")
-
-        except Exception as e:
-            print(f"Error saving UI state: {e}")
-            traceback.print_exc()
+            self.is_refreshing = False
 
     def _show_loading_state(self):
         """Show loading state in UI"""
-        print("\nDebug - Showing loading state")
+
         self.loading_label.show()
-        for frame in [
-            self.open_prs_frame,
-            self.needs_review_frame,
-            self.changes_requested_frame,
-            self.recently_closed_frame,
-        ]:
-            frame.start_loading()
 
     def _hide_loading_state(self):
         """Hide loading state in UI"""
-        print("\nDebug - Hiding loading state")
+
         self.loading_label.hide()
-        for frame in [
-            self.open_prs_frame,
-            self.needs_review_frame,
-            self.changes_requested_frame,
-            self.recently_closed_frame,
-        ]:
-            frame.stop_loading()
 
-    def _handle_refresh_complete(self, data):
+    def _handle_refresh_complete(
+        self,
+        prs_by_author_by_section: Dict[PRSection, Dict[str, list[(PullRequest, bool)]]],
+    ):
         """Handle completion of refresh operation"""
-        print("\nDebug - Refresh complete")
         try:
-            self._hide_loading_state()
-
-            # Unpack data tuple
-            open_prs, needs_review, changes_requested, recently_closed = data
-
             # Save each section's data
-            self.state.update_pr_data("open", open_prs)
-            self.state.update_pr_data("review", needs_review)
-            self.state.update_pr_data("attention", changes_requested)
-            self.state.update_pr_data("closed", recently_closed)
-
-            # Update UI
-            self.update_pr_lists(*data)
+            self.ui_state.update_pr_data(
+                SectionName.OPEN_PRS, prs_by_author_by_section.get(PRSection.OPEN, {})
+            )
+            self.ui_state.update_pr_data(
+                SectionName.NEEDS_REVIEW,
+                prs_by_author_by_section.get(PRSection.NEEDS_REVIEW, {}),
+            )
+            self.ui_state.update_pr_data(
+                SectionName.CHANGES_REQUESTED,
+                prs_by_author_by_section.get(PRSection.CHANGED_REQUESTED, {}),
+            )
+            self.ui_state.update_pr_data(
+                SectionName.RECENTLY_CLOSED,
+                prs_by_author_by_section.get(PRSection.CLOSED, {}),
+            )
+            self.ui_state.save()
+            self.apply_filters()
 
             if self.refresh_worker in self.workers:
                 self.workers.remove(self.refresh_worker)
@@ -403,136 +377,32 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error handling refresh completion: {e}")
             traceback.print_exc()
+        finally:
+            self._hide_loading_state()
+            self.is_refreshing = False
 
     def _handle_refresh_error(self, error_msg):
         """Handle refresh operation error"""
-        print(f"\nDebug - Refresh error: {error_msg}")
         self._hide_loading_state()
         QMessageBox.critical(self, "Error", f"Failed to refresh data: {error_msg}")
         if self.refresh_worker in self.workers:
             self.workers.remove(self.refresh_worker)
         self.refresh_worker = None
+        self.is_refreshing = False
 
-    def setup_refresh_timer(self, refresh_settings=None):
+    def setup_or_reset_refresh_timer(self, refresh_interval: RefreshInterval):
         """Setup the refresh timer"""
         try:
-            if not refresh_settings:
-                refresh_settings = self.settings.get(
-                    "refresh", {"value": 30, "unit": "seconds"}
-                )
-
-            interval, unit, value = self.calc_interval(refresh_settings)
-
-            print(
-                f"Debug - Setting up refresh timer with interval: {interval}ms ({value} {unit})"
-            )
-
-            # Stop existing timer if it exists
-            if hasattr(self, "auto_refresh_timer"):
+            if self.auto_refresh_timer is not None:
                 self.auto_refresh_timer.stop()
-                print("Debug - Stopped existing timer")
 
             # Create and start new timer
             self.auto_refresh_timer = QTimer(self)
             self.auto_refresh_timer.timeout.connect(self.refresh_data)
-            self.auto_refresh_timer.start(interval)
-            print("Debug - Started new timer")
-
+            self.auto_refresh_timer.start(refresh_interval.to_millis())
         except Exception as e:
             print(f"Error setting up refresh timer: {e}")
-
-    def _update_ui_with_current_data(self):
-        """Update UI with current data (after settings change)"""
-        self.apply_filters()
-
-    def _update_refresh_timer(self, refresh_settings):
-        """Update the refresh timer with new settings"""
-        print("\nDebug - Updating refresh timer")
-        try:
-            # Create timer if it doesn't exist
-            if not hasattr(self, "auto_refresh_timer"):
-                self.auto_refresh_timer = QTimer(self)
-                self.auto_refresh_timer.timeout.connect(self.refresh_data)
-
-            # Calculate interval
-            interval, unit, value = self.calc_interval(refresh_settings)
-
-            # Update timer
-            self.auto_refresh_timer.setInterval(interval)
-            if not self.auto_refresh_timer.isActive():
-                self.auto_refresh_timer.start()
-
-            print(f"Debug - Timer updated: {value} {unit} ({interval}ms)")
-
-        except Exception as e:
-            print(f"Error updating refresh timer: {e}")
-
-    def calc_interval(self, refresh_settings):
-        value = refresh_settings.get("value", 30)
-        unit = refresh_settings.get("unit", "seconds")
-        if unit == "seconds":
-            interval = value * 1000
-        elif unit == "minutes":
-            interval = value * 60 * 1000
-        else:  # hours
-            interval = value * 60 * 60 * 1000
-        return interval, unit, value
-
-    def refresh_complete(self):
-        """Handle refresh completion"""
-        print("\nDebug - Refresh complete")
-        self.hide_loading()
-        self.update_pr_lists()
-
-        # Save UI state after refresh
-        try:
-            for section in [
-                ("Needs Review", self.needs_review_frame),
-                ("Changes Requested", self.changes_requested_frame),
-                ("Open PRs", self.open_prs_frame),
-                ("Recently Closed", self.recently_closed_frame),
-            ]:
-                title, frame = section
-                key = f"section_{title}_expanded"
-                self.state.settings[key] = frame.is_expanded
-
-            print("\nDebug - Saving UI state after refresh")
-            print(f"Debug - State before save: {self.state.settings}")
-            self.state.save()
-            print("Debug - UI state saved successfully")
-
-        except Exception as e:
-            print(f"Error saving UI state: {e}")
-            traceback.print_exc()
 
     def showEvent(self, event):
         """Handle window show event"""
         super().showEvent(event)
-        # Schedule refresh after window is shown
-        QTimer.singleShot(0, self.refresh_data)
-
-
-def open_ui(
-    app: QApplication,
-    github_prs_client: GitHubPRsClient,
-    ui_state: UIState,
-    settings: Settings,
-):
-    pass
-
-
-def _filter_prs(pr_data, filter_state):
-    """Filter PRs based on the filter state"""
-    filtered_prs = []
-    for user, prs in pr_data.items():
-        if (
-            "All Authors" not in filter_state["selected_users"]
-            and user not in filter_state["selected_users"]
-        ):
-            continue
-        for pr in prs:
-            # Apply draft filter
-            if not filter_state["show_drafts"] and getattr(pr, "draft", False):
-                continue
-            filtered_prs.append(pr)
-    return filtered_prs

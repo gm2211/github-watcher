@@ -1,7 +1,9 @@
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Dict
+
+from src.utils import parse_datetime
 
 
 @dataclass
@@ -100,7 +102,8 @@ class TimelineEvent:
     id: int
     node_id: str
     url: str
-    author: User | Author
+    # Should ideally not be none, but doing this if parsing errors
+    author: Optional[User | Author] = None
     eventType: Optional[TimelineEventType] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -126,7 +129,7 @@ class TimelineEvent:
                 "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             }
         except Exception as e:
-            print(f"Warning: Error serializing TimelineEvent: {e}")
+            print(f"Error converting event to dict: {e}")
             return {
                 "id": self.id,
                 "node_id": self.node_id,
@@ -138,12 +141,9 @@ class TimelineEvent:
             }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "TimelineEvent":
+    def parse_event(cls, data: dict) -> "TimelineEvent":
         """Create TimelineEvent from a dictionary"""
         try:
-            print(
-                f"Debug: from_dict called with eventType: {data.get('eventType')} (type: {type(data.get('eventType'))})"
-            )
             # Convert string back to enum if present
             event_type = None
             if event_type_str := data.get("eventType"):
@@ -187,7 +187,7 @@ class TimelineEvent:
                 updated_at=updated_at,
             )
         except Exception as e:
-            print(f"Warning: Error parsing TimelineEvent from dict: {e}, data: {data}")
+            print(f"Error parsing event: {e}")
             return cls(
                 id=data.get("id", 0),
                 node_id=data.get("node_id", ""),
@@ -237,7 +237,7 @@ class TimelineEvent:
                         else:
                             author = User.parse(author_data)
                     except Exception as e:
-                        print(f"Warning: Error parsing author data: {e}")
+                        print(f"Error parsing author: {e}")
                         author = None
                 else:
                     author = None
@@ -267,11 +267,11 @@ class TimelineEvent:
                     created_at=created_at,
                     updated_at=updated_at,
                 )
-                print(f"Debug - Parsed event: {event_type}")
+
                 parsed_events.append(parsed_event)
 
             except Exception as e:
-                print(f"Warning: Error parsing event: {e}, event data: {event}")
+                print(f"Error parsing event: {e}")
                 continue
 
         return parsed_events
@@ -283,10 +283,10 @@ class PullRequest:
     number: int
     title: str
     state: str
-    created_at: str
-    updated_at: str
-    closed_at: Optional[str]
-    merged_at: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    closed_at: Optional[datetime]
+    merged_at: Optional[datetime]
     draft: bool
     user: User
     html_url: str
@@ -296,68 +296,56 @@ class PullRequest:
     changed_files: Optional[int] = None
     additions: Optional[int] = None
     deletions: Optional[int] = None
+    comment_count_by_author: Optional[Dict[str, int]] = None
+    last_comment_time: Optional[datetime] = None
+    last_comment_author: Optional[str] = None
+    approved_by: Optional[List[str]] = None
+    latest_reviews: Optional[Dict[str, str]] = None
+    merged: bool = False
+    merged_by: Optional[str] = None
 
     def to_dict(self):
         """Convert PullRequest to a dictionary for serialization"""
-        try:
-            return {
-                "id": self.id,
-                "number": self.number,
-                "title": self.title,
-                "state": self.state,
-                "created_at": self.created_at,
-                "updated_at": self.updated_at,
-                "closed_at": self.closed_at,
-                "merged_at": self.merged_at,
-                "draft": self.draft,
-                "user": self.user.to_dict() if self.user else None,
-                "html_url": self.html_url,
-                "repo_owner": self.repo_owner,
-                "repo_name": self.repo_name,
-                "timeline": (
-                    [event.to_dict() for event in self.timeline]
-                    if self.timeline
-                    else None
-                ),
-                "changed_files": self.changed_files,
-                "additions": self.additions,
-                "deletions": self.deletions,
-            }
-        except Exception as e:
-            print(f"Warning: Error serializing PullRequest: {e}")
-            # Return minimal valid dict
-            return {
-                "id": self.id,
-                "number": self.number,
-                "title": self.title,
-                "state": self.state,
-                "created_at": self.created_at,
-                "updated_at": self.updated_at,
-                "closed_at": None,
-                "merged_at": None,
-                "draft": self.draft,
-                "user": self.user.to_dict() if self.user else None,
-                "html_url": self.html_url,
-                "repo_owner": self.repo_owner,
-                "repo_name": self.repo_name,
-                "timeline": None,
-                "changed_files": None,
-                "additions": None,
-                "deletions": None,
-            }
+        return {
+            "id": self.id,
+            "number": self.number,
+            "title": self.title,
+            "state": self.state,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None,
+            "merged_at": self.merged_at.isoformat() if self.merged_at else None,
+            "draft": self.draft,
+            "user": self.user.to_dict() if self.user else None,
+            "html_url": self.html_url,
+            "repo_owner": self.repo_owner,
+            "repo_name": self.repo_name,
+            "timeline": (
+                [event.to_dict() for event in self.timeline] if self.timeline else None
+            ),
+            "changed_files": self.changed_files,
+            "additions": self.additions,
+            "deletions": self.deletions,
+            "comment_count_by_author": self.comment_count_by_author,
+            "last_comment_time": (
+                self.last_comment_time.isoformat() if self.last_comment_time else None
+            ),
+            "last_comment_author": self.last_comment_author,
+            "approved_by": self.approved_by,
+            "latest_reviews": self.latest_reviews,
+            "merged": self.merged,
+            "merged_by": self.merged_by,
+        }
 
     @staticmethod
     def parse_pr(pr_data: dict) -> "PullRequest":
         """Create PullRequest from a dictionary"""
         try:
-            print(f"\nDebug - parse_pr called with data: {pr_data}")
-
             # Parse timeline if present
             timeline = None
             if timeline_data := pr_data.get("timeline"):
-                print(f"Debug - Processing timeline with {len(timeline_data)} events")
                 timeline = [
-                    TimelineEvent.from_dict(event) for event in timeline_data if event
+                    TimelineEvent.parse_event(event) for event in timeline_data if event
                 ]
 
             # Ensure required fields exist
@@ -369,11 +357,11 @@ class PullRequest:
                 number=pr_data["number"],
                 title=pr_data["title"],
                 state=pr_data["state"],
-                created_at=pr_data["created_at"],
-                updated_at=pr_data["updated_at"],
-                closed_at=pr_data.get("closed_at"),
-                merged_at=pr_data.get("merged_at"),
-                draft=pr_data.get("draft", False),  # Default to False if not present
+                created_at=parse_datetime(pr_data["created_at"]),
+                updated_at=parse_datetime(pr_data["updated_at"]),
+                closed_at=parse_datetime(pr_data.get("closed_at")),
+                merged_at=parse_datetime(pr_data.get("merged_at")),
+                draft=pr_data.get("draft", False),
                 user=User.parse(pr_data["user"]),
                 html_url=pr_data["html_url"],
                 repo_owner=pr_data["repo_owner"],
@@ -382,13 +370,19 @@ class PullRequest:
                 changed_files=pr_data.get("changed_files"),
                 additions=pr_data.get("additions"),
                 deletions=pr_data.get("deletions"),
+                comment_count_by_author=pr_data.get("comment_count_by_author"),
+                last_comment_time=parse_datetime(pr_data.get("last_comment_time")),
+                last_comment_author=pr_data.get("last_comment_author"),
+                approved_by=pr_data.get("approved_by"),
+                latest_reviews=pr_data.get("latest_reviews"),
+                merged=pr_data.get("merged", False),
+                merged_by=pr_data.get("merged_by"),
             )
-            print(f"Debug - Successfully created PR object: #{pr.number}")
+
             return pr
 
         except Exception as e:
-            print(f"Warning: Error parsing PullRequest from dict: {e}")
-            print(f"Data: {pr_data}")
+            print(f"Error parsing PR: {e}")
             raise
 
     @staticmethod

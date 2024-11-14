@@ -1,35 +1,39 @@
+from typing import Dict, List, Tuple
+
 from PyQt6.QtCore import pyqtSignal, QThread
+
+from src.github_prs_client import PRSection
+from src.objects import PullRequest
 
 
 class RefreshWorker(QThread):
-    finished = pyqtSignal(tuple)
+    finished = pyqtSignal(dict)
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
 
-    def __init__(self, github_prs_client, users, section=None):
+    def __init__(self, github_prs_client, users, settings=None, section=None):
         super().__init__()
         self.github_prs_client = github_prs_client
         self.users = users
+        self.settings = settings
         self.section = section
 
     def run(self):
         try:
-            print(f"\nDebug - Worker: Starting refresh...")
-            print(f"Debug - Users to fetch: {self.users}")
-
             # Get PR data
-            data = self.github_prs_client.get_pr_data(self.users)
+            prs_by_author_by_section: Dict[
+                PRSection, Dict[str, List[Tuple[PullRequest, bool]]]
+            ] = self.github_prs_client.get_pr_data(
+                self.users, self.section, settings=self.settings
+            )
 
-            if data is not None:
-                print("Debug - Successfully fetched PR data")
+            if prs_by_author_by_section is not None:
                 self.progress.emit("Completed refresh")
-                self.finished.emit(data)
+                self.finished.emit(prs_by_author_by_section)
             else:
                 error_msg = "No data returned from GitHub API"
-                print(f"Debug - Error: {error_msg}")
                 self.error.emit(error_msg)
 
         except Exception as e:
             error_msg = f"Error refreshing data: {str(e)}"
-            print(f"Debug - {error_msg}")
             self.error.emit(error_msg)

@@ -31,7 +31,7 @@ def notify(title: str, message: str, notifier_app: str = NOTIFIER_APP):
 
 
 def kill_notifier():
-    print("Killing notifier..")
+
     tell_app(NOTIFIER_APP, "quit")
 
 

@@ -12,6 +12,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+import traceback
+
+from src.settings import TimeValue
 
 
 class SettingsDialog(QDialog):
@@ -36,8 +39,7 @@ class SettingsDialog(QDialog):
 
         self.users_text = QTextEdit()
         self.users_text.setPlaceholderText("Enter GitHub usernames, one per line")
-        current_users = self.settings.get("users", [])
-        self.users_text.setText("\n".join(current_users))
+        self.users_text.setText("\n".join(self.settings.users))
         users_group_layout.addWidget(self.users_text)
 
         users_layout.addWidget(users_group)
@@ -53,13 +55,11 @@ class SettingsDialog(QDialog):
 
         self.refresh_value = QSpinBox()
         self.refresh_value.setRange(1, 60)
-        current_refresh = self.settings.get("refresh", {})
-        self.refresh_value.setValue(current_refresh.get("value", 30))
+        self.refresh_value.setValue(self.settings.refresh.value)
 
         self.refresh_unit = QComboBox()
         self.refresh_unit.addItems(["seconds", "minutes", "hours"])
-        current_unit = current_refresh.get("unit", "seconds")
-        index = self.refresh_unit.findText(current_unit)
+        index = self.refresh_unit.findText(self.settings.refresh.unit)
         if index >= 0:
             self.refresh_unit.setCurrentIndex(index)
 
@@ -80,38 +80,93 @@ class SettingsDialog(QDialog):
         files_group = QGroupBox("Files Changed Thresholds")
         files_layout = QFormLayout(files_group)
 
-        current_thresholds = self.settings.get("thresholds", {})
-        files_thresholds = current_thresholds.get("files", {})
-
         self.files_warning = QSpinBox()
         self.files_warning.setRange(1, 100)
-        self.files_warning.setValue(files_thresholds.get("warning", 10))
+        self.files_warning.setValue(self.settings.thresholds.files.warning)
         files_layout.addRow("Warning Level:", self.files_warning)
 
         self.files_danger = QSpinBox()
         self.files_danger.setRange(1, 1000)
-        self.files_danger.setValue(files_thresholds.get("danger", 50))
+        self.files_danger.setValue(self.settings.thresholds.files.danger)
         files_layout.addRow("Danger Level:", self.files_danger)
 
         thresholds_layout.addWidget(files_group)
 
-        # Lines changed thresholds
-        lines_group = QGroupBox("Lines Changed Thresholds")
-        lines_layout = QFormLayout(lines_group)
+        # Additions thresholds
+        additions_group = QGroupBox("Line Additions Thresholds")
+        additions_layout = QFormLayout(additions_group)
 
-        lines_thresholds = current_thresholds.get("lines", {})
+        self.additions_warning = QSpinBox()
+        self.additions_warning.setRange(1, 2000)
+        self.additions_warning.setValue(self.settings.thresholds.additions.warning)
+        additions_layout.addRow("Warning Level:", self.additions_warning)
 
-        self.lines_warning = QSpinBox()
-        self.lines_warning.setRange(1, 1000)
-        self.lines_warning.setValue(lines_thresholds.get("warning", 500))
-        lines_layout.addRow("Warning Level:", self.lines_warning)
+        self.additions_danger = QSpinBox()
+        self.additions_danger.setRange(1, 10000)
+        self.additions_danger.setValue(self.settings.thresholds.additions.danger)
+        additions_layout.addRow("Danger Level:", self.additions_danger)
 
-        self.lines_danger = QSpinBox()
-        self.lines_danger.setRange(1, 10000)
-        self.lines_danger.setValue(lines_thresholds.get("danger", 1000))
-        lines_layout.addRow("Danger Level:", self.lines_danger)
+        thresholds_layout.addWidget(additions_group)
 
-        thresholds_layout.addWidget(lines_group)
+        # Deletions thresholds
+        deletions_group = QGroupBox("Line Deletions Thresholds")
+        deletions_layout = QFormLayout(deletions_group)
+
+        self.deletions_warning = QSpinBox()
+        self.deletions_warning.setRange(1, 2000)
+        self.deletions_warning.setValue(self.settings.thresholds.deletions.warning)
+        deletions_layout.addRow("Warning Level:", self.deletions_warning)
+
+        self.deletions_danger = QSpinBox()
+        self.deletions_danger.setRange(1, 10000)
+        self.deletions_danger.setValue(self.settings.thresholds.deletions.danger)
+        deletions_layout.addRow("Danger Level:", self.deletions_danger)
+
+        thresholds_layout.addWidget(deletions_group)
+
+        # Age thresholds
+        age_group = QGroupBox("PR Age Thresholds")
+        age_layout = QFormLayout(age_group)
+
+        # Warning threshold
+        warning_container = QWidget()
+        warning_layout = QHBoxLayout(warning_container)
+        warning_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.age_warning_value = QSpinBox()
+        self.age_warning_value.setRange(1, 90)
+        self.age_warning_value.setValue(self.settings.thresholds.age.warning.value)
+        warning_layout.addWidget(self.age_warning_value)
+
+        self.age_warning_unit = QComboBox()
+        self.age_warning_unit.addItems(["minutes", "hours", "days"])
+        index = self.age_warning_unit.findText(self.settings.thresholds.age.warning.unit)
+        if index >= 0:
+            self.age_warning_unit.setCurrentIndex(index)
+        warning_layout.addWidget(self.age_warning_unit)
+
+        age_layout.addRow("Warning Level:", warning_container)
+
+        # Danger threshold
+        danger_container = QWidget()
+        danger_layout = QHBoxLayout(danger_container)
+        danger_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.age_danger_value = QSpinBox()
+        self.age_danger_value.setRange(1, 90)
+        self.age_danger_value.setValue(self.settings.thresholds.age.danger.value)
+        danger_layout.addWidget(self.age_danger_value)
+
+        self.age_danger_unit = QComboBox()
+        self.age_danger_unit.addItems(["minutes", "hours", "days"])
+        index = self.age_danger_unit.findText(self.settings.thresholds.age.danger.unit)
+        if index >= 0:
+            self.age_danger_unit.setCurrentIndex(index)
+        danger_layout.addWidget(self.age_danger_unit)
+
+        age_layout.addRow("Danger Level:", danger_container)
+
+        thresholds_layout.addWidget(age_group)
 
         # Recently Closed threshold
         recent_group = QGroupBox("Recently Closed Settings")
@@ -119,12 +174,99 @@ class SettingsDialog(QDialog):
 
         self.recent_threshold = QSpinBox()
         self.recent_threshold.setRange(1, 30)
-        self.recent_threshold.setValue(
-            current_thresholds.get("recently_closed_days", 7)
-        )
+        self.recent_threshold.setValue(self.settings.thresholds.recently_closed_days)
         recent_layout.addRow("Show PRs closed within (days):", self.recent_threshold)
 
         thresholds_layout.addWidget(recent_group)
+
+        # Add Time to Merge thresholds
+        ttm_group = QGroupBox("Time to Merge Thresholds")
+        ttm_layout = QFormLayout(ttm_group)
+
+        # Warning threshold
+        warning_container = QWidget()
+        warning_layout = QHBoxLayout(warning_container)
+        warning_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.ttm_warning_value = QSpinBox()
+        self.ttm_warning_value.setRange(1, 90)
+        self.ttm_warning_value.setValue(self.settings.thresholds.time_to_merge.warning.value)
+        warning_layout.addWidget(self.ttm_warning_value)
+
+        self.ttm_warning_unit = QComboBox()
+        self.ttm_warning_unit.addItems(["minutes", "hours", "days"])
+        index = self.ttm_warning_unit.findText(self.settings.thresholds.time_to_merge.warning.unit)
+        if index >= 0:
+            self.ttm_warning_unit.setCurrentIndex(index)
+        warning_layout.addWidget(self.ttm_warning_unit)
+
+        ttm_layout.addRow("Warning Level:", warning_container)
+
+        # Danger threshold
+        danger_container = QWidget()
+        danger_layout = QHBoxLayout(danger_container)
+        danger_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.ttm_danger_value = QSpinBox()
+        self.ttm_danger_value.setRange(1, 90)
+        self.ttm_danger_value.setValue(self.settings.thresholds.time_to_merge.danger.value)
+        danger_layout.addWidget(self.ttm_danger_value)
+
+        self.ttm_danger_unit = QComboBox()
+        self.ttm_danger_unit.addItems(["minutes", "hours", "days"])
+        index = self.ttm_danger_unit.findText(self.settings.thresholds.time_to_merge.danger.unit)
+        if index >= 0:
+            self.ttm_danger_unit.setCurrentIndex(index)
+        danger_layout.addWidget(self.ttm_danger_unit)
+
+        ttm_layout.addRow("Danger Level:", danger_container)
+
+        thresholds_layout.addWidget(ttm_group)
+
+        # Add Time Since Last Comment thresholds
+        tslc_group = QGroupBox("Time Since Last Comment Thresholds")
+        tslc_layout = QFormLayout(tslc_group)
+
+        # Warning threshold
+        warning_container = QWidget()
+        warning_layout = QHBoxLayout(warning_container)
+        warning_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.tslc_warning_value = QSpinBox()
+        self.tslc_warning_value.setRange(1, 90)
+        self.tslc_warning_value.setValue(self.settings.thresholds.time_since_comment.warning.value)
+        warning_layout.addWidget(self.tslc_warning_value)
+
+        self.tslc_warning_unit = QComboBox()
+        self.tslc_warning_unit.addItems(["minutes", "hours", "days"])
+        index = self.tslc_warning_unit.findText(self.settings.thresholds.time_since_comment.warning.unit)
+        if index >= 0:
+            self.tslc_warning_unit.setCurrentIndex(index)
+        warning_layout.addWidget(self.tslc_warning_unit)
+
+        tslc_layout.addRow("Warning Level:", warning_container)
+
+        # Danger threshold
+        danger_container = QWidget()
+        danger_layout = QHBoxLayout(danger_container)
+        danger_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.tslc_danger_value = QSpinBox()
+        self.tslc_danger_value.setRange(1, 90)
+        self.tslc_danger_value.setValue(self.settings.thresholds.time_since_comment.danger.value)
+        danger_layout.addWidget(self.tslc_danger_value)
+
+        self.tslc_danger_unit = QComboBox()
+        self.tslc_danger_unit.addItems(["minutes", "hours", "days"])
+        index = self.tslc_danger_unit.findText(self.settings.thresholds.time_since_comment.danger.unit)
+        if index >= 0:
+            self.tslc_danger_unit.setCurrentIndex(index)
+        danger_layout.addWidget(self.tslc_danger_unit)
+
+        tslc_layout.addRow("Danger Level:", danger_container)
+
+        thresholds_layout.addWidget(tslc_group)
+
         thresholds_layout.addStretch()
 
         tabs.addTab(thresholds_tab, "Thresholds")
@@ -140,41 +282,56 @@ class SettingsDialog(QDialog):
 
     def get_settings(self):
         """Get current settings from dialog"""
-        print("\nDebug - Getting settings from dialog")
         try:
-
             # Update users
             users_text = self.users_text.toPlainText()
             users = [u.strip() for u in users_text.split("\n") if u.strip()]
-            print(f"Debug - Users: {users}")
-            self.settings.set("users", users)
+            self.settings.users = users
 
             # Update refresh settings
-            refresh = {
-                "value": self.refresh_value.value(),
-                "unit": self.refresh_unit.currentText(),
-            }
-            print(f"Debug - Refresh settings: {refresh}")
-            self.settings.set("refresh", refresh)
+            self.settings.refresh.value = self.refresh_value.value()
+            self.settings.refresh.unit = self.refresh_unit.currentText()
 
             # Update thresholds
-            thresholds = {
-                "files": {
-                    "warning": self.files_warning.value(),
-                    "danger": self.files_danger.value(),
-                },
-                "lines": {
-                    "warning": self.lines_warning.value(),
-                    "danger": self.lines_danger.value(),
-                },
-                "recently_closed_days": self.recent_threshold.value(),
-            }
-            print(f"Debug - Thresholds: {thresholds}")
-            self.settings.set("thresholds", thresholds)
+            self.settings.thresholds.files.warning = self.files_warning.value()
+            self.settings.thresholds.files.danger = self.files_danger.value()
+            self.settings.thresholds.additions.warning = self.additions_warning.value()
+            self.settings.thresholds.additions.danger = self.additions_danger.value()
+            self.settings.thresholds.deletions.warning = self.deletions_warning.value()
+            self.settings.thresholds.deletions.danger = self.deletions_danger.value()
+            self.settings.thresholds.age.warning = TimeValue(
+                value=self.age_warning_value.value(),
+                unit=self.age_warning_unit.currentText()
+            )
+            self.settings.thresholds.age.danger = TimeValue(
+                value=self.age_danger_value.value(),
+                unit=self.age_danger_unit.currentText()
+            )
+            self.settings.thresholds.recently_closed_days = (
+                self.recent_threshold.value()
+            )
+            self.settings.thresholds.time_to_merge.warning = TimeValue(
+                value=self.ttm_warning_value.value(),
+                unit=self.ttm_warning_unit.currentText()
+            )
+            self.settings.thresholds.time_to_merge.danger = TimeValue(
+                value=self.ttm_danger_value.value(),
+                unit=self.ttm_danger_unit.currentText()
+            )
+            self.settings.thresholds.time_since_comment.warning = TimeValue(
+                value=self.tslc_warning_value.value(),
+                unit=self.tslc_warning_unit.currentText()
+            )
+            self.settings.thresholds.time_since_comment.danger = TimeValue(
+                value=self.tslc_danger_value.value(),
+                unit=self.tslc_danger_unit.currentText()
+            )
 
-            return self.settings  # Return the Settings instance
+            # Save settings
+            self.settings.save()
+            return self.settings
 
         except Exception as e:
-            print(f"Error getting settings from dialog: {e}")
+            traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to get settings: {str(e)}")
             return None
