@@ -12,8 +12,6 @@ from src.objects import PullRequest, TimelineEvent
 from src.settings import Settings
 from src.utils import parse_datetime
 
-DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
-
 
 class PRSection(Enum):
     OPEN = auto()
@@ -48,7 +46,7 @@ class GitHubPRsClient:
         self.section_queries = {
             PRSection.OPEN: PRQueryConfig(query="is:pr is:open"),
             PRSection.NEEDS_REVIEW: PRQueryConfig(
-                query="is:pr is:open review:none comments:0 -draft:true"
+                query="is:pr is:open review:none -draft:true"
             ),
             PRSection.CHANGED_REQUESTED: PRQueryConfig(
                 query="is:pr is:open review:changes_requested -draft:true"

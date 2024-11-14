@@ -242,7 +242,7 @@ class MainWindow(QMainWindow):
                             continue
 
                         # Add user header
-                        user_header = QLabel(f"User: {user}")
+                        user_header = QLabel(f"Author: {user}")
                         user_header.setStyleSheet(
                             f"""
                             QLabel {{
@@ -341,11 +341,11 @@ class MainWindow(QMainWindow):
             )
             self.ui_state.update_pr_data(
                 SectionName.NEEDS_REVIEW,
-                prs_by_author_by_section.get(PRSection.CHANGED_REQUESTED, {}),
+                prs_by_author_by_section.get(PRSection.NEEDS_REVIEW, {}),
             )
             self.ui_state.update_pr_data(
                 SectionName.CHANGES_REQUESTED,
-                prs_by_author_by_section.get(PRSection.NEEDS_REVIEW, {}),
+                prs_by_author_by_section.get(PRSection.CHANGED_REQUESTED, {}),
             )
             self.ui_state.update_pr_data(
                 SectionName.RECENTLY_CLOSED,
