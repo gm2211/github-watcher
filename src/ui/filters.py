@@ -6,7 +6,7 @@ from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QLineEdit, QWidget
 
 from .combo_box import MultiSelectComboBox
-from .theme import Colors, Styles
+from .themes import Colors, Styles
 from ..objects import PullRequest
 
 ALL_AUTHORS = "All Authors"

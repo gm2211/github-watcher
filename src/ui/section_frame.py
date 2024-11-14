@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.ui.theme import Colors, Styles
+from src.ui.themes import Colors, Styles
 from src.ui.ui_state import SectionName, UIState
 
 

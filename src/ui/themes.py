@@ -21,9 +21,6 @@ class Colors:
     BORDER_HEADER_BOTTOM = "#373e47"  # Header bottom border
 
     # Status Colors - More vibrant
-    SUCCESS = "#3fb950"  # Success - Brighter green
-    WARNING = "#d29922"  # Warning - Warm yellow
-    DANGER = "#f85149"  # Danger - Bright red
     INFO = "#58a6ff"  # Info - Bright blue
 
     # Status Background Colors - Improved contrast
@@ -206,6 +203,8 @@ class Styles:
     }}
     """
 
+    PR_CARD_LABELS = "color: #8b949e; font-size: 11px;"
+
     @staticmethod
     def pr_card_badge(bg_color):
         return f"""
@@ -222,6 +221,7 @@ class Styles:
             background: transparent;
             color: white;
             font-size: 10px;
+            font-weight: 600;
             padding: 0px;
         }}
     """

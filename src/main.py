@@ -4,6 +4,7 @@ import traceback
 from datetime import timedelta
 
 from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 from src.github_auth import get_github_api_key
@@ -35,12 +36,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("GitHub PR Watcher")
     app.setApplicationVersion(VERSION)
-
-    # Set app icon
-    if os.path.exists(get_resource_path("resources/AppIcon.icns")):
-        from PyQt6.QtGui import QIcon
-
-        app.setWindowIcon(QIcon(get_resource_path("resources/AppIcon.icns")))
+    app.setWindowIcon(QIcon(get_resource_path("resources/icon.png")))
 
     try:
         # Load UI state and settings

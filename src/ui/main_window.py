@@ -23,7 +23,7 @@ from src.ui.refresh_worker import RefreshWorker
 from src.ui.section_frame import SectionFrame
 from src.ui.settings_dialog import SettingsDialog
 from src.ui.ui_state import SectionName, UIState
-from src.ui.theme import Colors, Styles
+from src.ui.themes import Colors, Styles
 
 
 class MainWindow(QMainWindow):
@@ -144,14 +144,14 @@ class MainWindow(QMainWindow):
         buttons_layout.addWidget(test_notif_btn)
 
         # Refresh button
-        refresh_btn = QPushButton("↻ Refresh")
+        refresh_btn = QPushButton("🔄 Refresh")
         refresh_btn.clicked.connect(self.refresh_data)
         refresh_btn.setFixedWidth(80)
         refresh_btn.setStyleSheet(Styles.BUTTON)
         buttons_layout.addWidget(refresh_btn)
 
         # Settings button
-        settings_btn = QPushButton("⚙ Settings")
+        settings_btn = QPushButton("⚙️ Settings")
         settings_btn.clicked.connect(self.show_settings)
         settings_btn.setFixedWidth(80)
         settings_btn.setStyleSheet(Styles.BUTTON)

@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .theme import Styles
+from .themes import Colors, Styles
 from ..objects import PullRequest
 from ..utils import hex_to_rgba
 import traceback
@@ -110,18 +110,18 @@ def create_changes_badge(additions, deletions, settings):
 def format_time_ago(delta) -> str:
     """Format a timedelta into a human readable string"""
     total_seconds = int(delta.total_seconds())
-    
+
     if total_seconds < 60:
         return f"{total_seconds} seconds old"
-    
+
     minutes = total_seconds // 60
     if minutes < 60:
         return f"{minutes} minutes old"
-    
+
     hours = minutes // 60
     if hours < 24:
         return f"{hours} hours old"
-    
+
     days = hours // 24
     return f"{days} days old"
 
@@ -130,21 +130,21 @@ def calculate_pr_age_days(pr: PullRequest) -> tuple[int, str]:
     """Calculate PR age in days and return formatted string"""
     if not pr.created_at:
         return 0, "0 seconds old"
-        
+
     if isinstance(pr.created_at, str):
         # Handle both +00:00 and Z format
-        created_at = datetime.fromisoformat(pr.created_at.replace('Z', '+00:00'))
+        created_at = datetime.fromisoformat(pr.created_at.replace("Z", "+00:00"))
     else:
         created_at = pr.created_at
-    
+
     # Ensure both datetimes are timezone-aware
     now = datetime.now().astimezone()
     if created_at.tzinfo is None:
         created_at = created_at.astimezone()
-    
+
     delta = now - created_at
     days = delta.days
-    
+
     return days, format_time_ago(delta)
 
 
@@ -188,150 +188,103 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     title.setWordWrap(True)
     title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-    if url := getattr(pr, "html_url", None):
+    if pr.html_url:
 
         def open_url(_ignored):
-            webbrowser.open(url)
+            webbrowser.open(pr.html_url)
 
         title.mousePressEvent = open_url
 
     title_layout.addWidget(title)
+    json_button = QPushButton("{ }")
+    json_button.setStyleSheet(Styles.PR_CARD_JSON_BUTTON)
+    json_button.setFixedSize(30, 20)
+    json_button.setToolTip("Show PR Data")
 
     # Add repo info and author
     info_container = QWidget()
-    info_layout = QHBoxLayout(info_container)
+    info_layout = QVBoxLayout(info_container)
     info_layout.setContentsMargins(0, 0, 0, 0)
-    info_layout.setSpacing(8)
+    info_layout.setSpacing(2)
 
     # Repository info
     repo_text = f"{pr.repo_owner}/{pr.repo_name}"
     repo_label = QLabel(repo_text)
-    repo_label.setStyleSheet("color: #8b949e; font-size: 11px;")
+    repo_label.setStyleSheet(Styles.PR_CARD_LABELS)
     info_layout.addWidget(repo_label)
 
-    # Separator
-    separator = QLabel("•")
-    separator.setStyleSheet("color: #8b949e; font-size: 11px;")
-    info_layout.addWidget(separator)
+    # Author info
+    if pr.user:
+        author_label = QLabel(f"author: {pr.user.login}")
+        author_label.setStyleSheet(Styles.PR_CARD_LABELS)
+        info_layout.addWidget(author_label)
 
     # Author info
-    if hasattr(pr, "user") and pr.user:
-        author_label = QLabel(f"author: {pr.user.login}")
-        author_label.setStyleSheet("color: #8b949e; font-size: 11px;")
-        info_layout.addWidget(author_label)
+    if pr.approved_by:
+        approver_label = QLabel(f"approved by: {pr.approved_by[0]}")
+        approver_label.setStyleSheet(Styles.PR_CARD_LABELS)
+        info_layout.addWidget(approver_label)
 
     info_layout.addStretch()
     title_layout.addWidget(info_container)
 
-    top_row.addWidget(title_container, stretch=1)
+    top_row.addWidget(title_container, stretch=0)
+    top_row.addWidget(json_button)
 
-    # Right side container for status badge and JSON button
+    # Right side container for JSON button
     right_container = QWidget()
     right_layout = QVBoxLayout(right_container)
-    right_layout.setContentsMargins(0, 2, 0, 2)  # Small vertical margins
-    right_layout.setSpacing(8)  # Increased spacing between badge and button from 6 to 8
+    right_layout.setContentsMargins(0, 2, 0, 2)
+    right_layout.setSpacing(8)
 
-    # Status badge (OPEN/CLOSED/MERGED)
+    top_row.addWidget(right_container)
+
+    header.addLayout(top_row)
+
+    # Status badge (MERGED/CLOSED/OPEN)
     status_color = "#28a745"  # Default green for open
     status_text = "OPEN"
 
-    if getattr(pr, "merged_at", None):
+    if pr.merged or pr.merged_at:
         status_color = "#6f42c1"  # Purple for merged
         status_text = "MERGED"
-    elif getattr(pr, "closed_at", None):
+    elif pr.closed_at:
         status_color = "#dc3545"  # Red for closed
         status_text = "CLOSED"
 
-    status_badge = QFrame(right_container)
-    status_badge.setStyleSheet(
-        f"""
-        QFrame {{
-            background-color: {status_color};
-            border-radius: 10px;
-            min-width: 55px;
-            max-width: 55px;
-            min-height: 20px;
-            max-height: 20px;
-            margin: 0;
-            padding: 0;
-            opacity: 0.5;
-        }}
-        QLabel {{
-            color: white;
-            font-weight: 700;
-            font-size: 11px;
-            background: transparent;
-            padding: 0;
-            margin: 0;
-        }}
-    """
-    )
+    status_badge = create_badge(status_text, status_color, opacity=0.5)
+    right_layout.addWidget(status_badge)
 
-    status_layout = QHBoxLayout(status_badge)
-    status_layout.setContentsMargins(0, 0, 0, 0)
-    status_layout.setSpacing(0)
+    # Draft badge
+    if pr.draft:
+        draft_badge = create_badge("DRAFT", "#6c757d", opacity=0.5)
+        right_layout.addWidget(draft_badge)
 
-    status_label = QLabel(status_text)
-    status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    status_layout.addWidget(status_label, alignment=Qt.AlignmentFlag.AlignCenter)
+    # Approval status badge
+    if pr.approved_by:
+        approval_badge = create_badge("APPROVED", Colors.SUCCESS_BG, opacity=0.5)
+        first_approver = pr.approved_by[0]
+        approval_badge.setToolTip(f"Approved by {first_approver}")
 
-    # Container for status badge to ensure center alignment
-    status_container = QWidget()
-    status_container_layout = QHBoxLayout(status_container)
-    status_container_layout.setContentsMargins(0, 0, 0, 0)
-    status_container_layout.addWidget(
-        status_badge, alignment=Qt.AlignmentFlag.AlignCenter
-    )
-    right_layout.addWidget(status_container)
+        right_layout.addWidget(approval_badge)
+    elif pr.latest_reviews:
+        # Show changes requested badge if any reviewer requested changes
+        if any(
+            state.lower() == "changes_requested" for state in pr.latest_reviews.values()
+        ):
+            changes_badge = create_badge("CHANGES REQUESTED", "#dc3545", opacity=0.5)
+            right_layout.addWidget(changes_badge)
 
-    # Add JSON button
-    json_button = QPushButton("{ }")
-    json_button.setStyleSheet(Styles.PR_CARD_JSON_BUTTON)
-    json_button.setFixedSize(30, 20)  # Made slightly shorter to match status badge
-    json_button.setToolTip("Show PR Data")
+    # Bottom row
+    bottom_layout = QHBoxLayout()
+    bottom_layout.setSpacing(4)
 
     def show_json():
         dialog = JsonViewDialog(pr.to_dict(), parent)
         dialog.exec()
 
     json_button.clicked.connect(show_json)
-
-    # Container for JSON button to ensure center alignment
-    json_container = QWidget()
-    json_container_layout = QHBoxLayout(json_container)
-    json_container_layout.setContentsMargins(0, 0, 0, 0)
-    json_container_layout.addWidget(json_button, alignment=Qt.AlignmentFlag.AlignCenter)
-    right_layout.addWidget(json_container)
-
-    top_row.addWidget(right_container)
-    header.addLayout(top_row)
-
-    # Add badges
-    badges_layout = QHBoxLayout()
-    badges_layout.setSpacing(4)
-
-    # Draft badge
-    if getattr(pr, "draft", False):
-        draft_badge = create_badge("DRAFT", "#6c757d", opacity=0.5)
-        badges_layout.addWidget(draft_badge)
-
-    # Approval status badge
-    if hasattr(pr, "timeline") and pr.timeline:
-        latest_review = None
-        for event in reversed(pr.timeline):
-            if event.eventType in ["approved", "changes_requested"]:
-                latest_review = event.eventType
-                break
-
-        if latest_review == "approved":
-            approval_badge = create_badge("APPROVED", "#28a745", opacity=0.5)
-            badges_layout.addWidget(approval_badge)
-        elif latest_review == "changes_requested":
-            changes_badge = create_badge("CHANGES REQUESTED", "#dc3545", opacity=0.5)
-            badges_layout.addWidget(changes_badge)
-
-    # Files badge
-    files_count = getattr(pr, "changed_files", 0) or 0
+    files_count = pr.changed_files or 0
     if files_count > 0:
         files_warning = settings.thresholds.files.warning
         files_danger = settings.thresholds.files.danger
@@ -344,14 +297,14 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
             badge_color = "#28a745"  # Green
 
         files_badge = create_badge(f"{files_count} files", badge_color, opacity=0.5)
-        badges_layout.addWidget(files_badge)
+        bottom_layout.addWidget(files_badge)
 
     # Changes badge
-    additions = getattr(pr, "additions", 0) or 0
-    deletions = getattr(pr, "deletions", 0) or 0
+    additions = pr.additions or 0
+    deletions = pr.deletions or 0
     if additions > 0 or deletions > 0:
         changes_badge = create_changes_badge(additions, deletions, settings)
-        badges_layout.addWidget(changes_badge)
+        bottom_layout.addWidget(changes_badge)
 
     # Age badge
     age_days, age_text = calculate_pr_age_days(pr)
@@ -366,10 +319,10 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
         badge_color = "#28a745"  # Green
 
     age_badge = create_badge(age_text, badge_color, opacity=0.5)
-    badges_layout.addWidget(age_badge)
+    bottom_layout.addWidget(age_badge)
 
-    badges_layout.addStretch()
-    header.addLayout(badges_layout)
+    bottom_layout.addStretch()
+    header.addLayout(bottom_layout)
     layout.addLayout(header)
 
     return card

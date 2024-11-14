@@ -304,66 +304,34 @@ class PullRequest:
 
     def to_dict(self):
         """Convert PullRequest to a dictionary for serialization"""
-        try:
-            return {
-                "id": self.id,
-                "number": self.number,
-                "title": self.title,
-                "state": self.state,
-                "created_at": self.created_at,
-                "updated_at": self.updated_at,
-                "closed_at": self.closed_at,
-                "merged_at": self.merged_at,
-                "draft": self.draft,
-                "user": self.user.to_dict() if self.user else None,
-                "html_url": self.html_url,
-                "repo_owner": self.repo_owner,
-                "repo_name": self.repo_name,
-                "timeline": (
-                    [event.to_dict() for event in self.timeline]
-                    if self.timeline
-                    else None
-                ),
-                "changed_files": self.changed_files,
-                "additions": self.additions,
-                "deletions": self.deletions,
-                "comment_count_by_author": self.comment_count_by_author,
-                "last_comment_time": self.last_comment_time,
-                "last_comment_author": self.last_comment_author,
-                "approved_by": self.approved_by,
-                "latest_reviews": self.latest_reviews,
-                "merged": self.merged,
-                "merged_by": self.merged_by,
-            }
-        except Exception as e:
-            print(f"Error converting PR to dict: {e}")
-            # Return minimal valid dict
-            return {
-                "id": self.id,
-                "number": self.number,
-                "title": self.title,
-                "state": self.state,
-                "created_at": self.created_at,
-                "updated_at": self.updated_at,
-                "closed_at": None,
-                "merged_at": None,
-                "draft": self.draft,
-                "user": self.user.to_dict() if self.user else None,
-                "html_url": self.html_url,
-                "repo_owner": self.repo_owner,
-                "repo_name": self.repo_name,
-                "timeline": None,
-                "changed_files": None,
-                "additions": None,
-                "deletions": None,
-                "comment_count_by_author": None,
-                "last_comment_time": None,
-                "last_comment_author": None,
-                "approved_by": None,
-                "latest_reviews": None,
-                "merged": False,
-                "merged_by": None,
-            }
+        return {
+            "id": self.id,
+            "number": self.number,
+            "title": self.title,
+            "state": self.state,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "closed_at": self.closed_at,
+            "merged_at": self.merged_at,
+            "draft": self.draft,
+            "user": self.user.to_dict() if self.user else None,
+            "html_url": self.html_url,
+            "repo_owner": self.repo_owner,
+            "repo_name": self.repo_name,
+            "timeline": (
+                [event.to_dict() for event in self.timeline] if self.timeline else None
+            ),
+            "changed_files": self.changed_files,
+            "additions": self.additions,
+            "deletions": self.deletions,
+            "comment_count_by_author": self.comment_count_by_author,
+            "last_comment_time": self.last_comment_time,
+            "last_comment_author": self.last_comment_author,
+            "approved_by": self.approved_by,
+            "latest_reviews": self.latest_reviews,
+            "merged": self.merged,
+            "merged_by": self.merged_by,
+        }
 
     @staticmethod
     def parse_pr(pr_data: dict) -> "PullRequest":

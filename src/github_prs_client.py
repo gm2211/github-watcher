@@ -104,7 +104,9 @@ class GitHubPRsClient:
                 response = requests.get(
                     f"{self.base_url}{endpoint}", headers=self.headers, params=params
                 )
-                response.raise_for_status()
+                if response.status_code != 200:
+                    print(f"Error in _search_issues: {response.text}")
+                    return []
                 data = response.json()
 
                 # Process each PR item
@@ -224,7 +226,7 @@ class GitHubPRsClient:
                 pr.additions = details.get("additions")
                 pr.deletions = details.get("deletions")
                 pr.merged_at = details.get("merged_at")
-                pr.merged = details.get("merged", False)  # Add merged status
+                pr.merged = details.get("merged", False)
                 pr.merged_by = (
                     details.get("merged_by", {}).get("login")
                     if details.get("merged_by")
