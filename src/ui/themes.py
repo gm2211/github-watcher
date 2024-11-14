@@ -22,6 +22,10 @@ class Colors:
 
     # Status Colors - More vibrant
     INFO = "#58a6ff"  # Info - Bright blue
+    RED = "#dc3545"
+    GREEN = "#28a745"
+    PURPLE = "#6f42c1"
+    YELLOW = "#ffc107"
 
     # Status Background Colors - Improved contrast
     SUCCESS_BG = "rgba(46, 160, 67, 0.2)"  # Success bg - More visible
@@ -212,7 +216,7 @@ class Styles:
             background-color: {bg_color};
             border-radius: 10px;
             min-width: 45px;
-            max-width: 65px;
+            max-width: 85px;
             min-height: 20px;
             max-height: 20px;
             padding: 0px 6px;

@@ -3,10 +3,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import json
 
 from src.objects import PullRequest
+from src.utils import flatten
 
 
 class SectionName(Enum):
@@ -79,12 +80,32 @@ class UIState:
         return {}, None
 
     def update_pr_data(
-        self, section_name: SectionName, data: Dict[str, list[PullRequest]]
+        self,
+        section_name: SectionName,
+        prs_by_author: Dict[str, List[Tuple[PullRequest, bool]]],
     ) -> None:
         """Update PR data for a section"""
         try:
+            existing: List[PullRequest] = (
+                flatten(
+                    list(self.data_by_section.get(section_name).prs_by_author.values())
+                )
+                if self.data_by_section.get(section_name)
+                else []
+            )
+            merged = {}
+
+            for user, prs in prs_by_author.items():
+                for pr, partial in prs:
+                    if partial:
+                        existing_pr = next(pr.number == ex.number for ex in existing)
+                        merged.setdefault(user, []).append(existing_pr)
+                    else:
+                        merged.setdefault(user, []).append(pr)
+
+            # Merge prs_by_author with existing data, if partial boolean is true, don't overwrite existing PRs
             self.data_by_section[section_name] = SectionData(
-                prs_by_author=data, timestamp=datetime.now()
+                prs_by_author=merged, timestamp=datetime.now()
             )
             self.save()
         except ValueError:

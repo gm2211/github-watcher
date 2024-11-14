@@ -1,8 +1,13 @@
+from typing import Dict, List, Tuple
+
 from PyQt6.QtCore import pyqtSignal, QThread
+
+from src.github_prs_client import PRSection
+from src.objects import PullRequest
 
 
 class RefreshWorker(QThread):
-    finished = pyqtSignal(tuple)
+    finished = pyqtSignal(dict)
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
 
@@ -16,13 +21,15 @@ class RefreshWorker(QThread):
     def run(self):
         try:
             # Get PR data
-            data = self.github_prs_client.get_pr_data(
+            prs_by_author_by_section: Dict[
+                PRSection, Dict[str, List[Tuple[PullRequest, bool]]]
+            ] = self.github_prs_client.get_pr_data(
                 self.users, self.section, settings=self.settings
             )
 
-            if data is not None:
+            if prs_by_author_by_section is not None:
                 self.progress.emit("Completed refresh")
-                self.finished.emit(data)
+                self.finished.emit(prs_by_author_by_section)
             else:
                 error_msg = "No data returned from GitHub API"
                 self.error.emit(error_msg)

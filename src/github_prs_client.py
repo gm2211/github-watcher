@@ -3,11 +3,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import auto, Enum
+from typing import Dict, List, Tuple
 
 import requests
 
 from src.notifications import notify
 from src.objects import PullRequest, TimelineEvent
+from src.settings import Settings
 from src.utils import parse_datetime
 
 DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
@@ -15,15 +17,14 @@ DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
 class PRSection(Enum):
     OPEN = auto()
-    REVIEW = auto()
-    ATTENTION = auto()
+    NEEDS_REVIEW = auto()
+    CHANGED_REQUESTED = auto()
     CLOSED = auto()
 
 
 @dataclass
 class PRQueryConfig:
     query: str
-    section: PRSection
 
 
 class GitHubPRsClient:
@@ -45,20 +46,15 @@ class GitHubPRsClient:
 
         # Define section-specific queries
         self.section_queries = {
-            PRSection.OPEN: PRQueryConfig(
-                query="is:pr is:open", section=PRSection.OPEN
+            PRSection.OPEN: PRQueryConfig(query="is:pr is:open"),
+            PRSection.NEEDS_REVIEW: PRQueryConfig(
+                query="is:pr is:open review:none comments:0 -draft:true"
             ),
-            PRSection.REVIEW: PRQueryConfig(
-                query="is:pr is:open review:none comments:0 -draft:true",
-                section=PRSection.REVIEW,
-            ),
-            PRSection.ATTENTION: PRQueryConfig(
-                query="is:pr is:open review:changes_requested -draft:true",
-                section=PRSection.ATTENTION,
+            PRSection.CHANGED_REQUESTED: PRQueryConfig(
+                query="is:pr is:open review:changes_requested -draft:true"
             ),
             PRSection.CLOSED: PRQueryConfig(
-                query=f"is:pr is:closed closed:>={self._recent_date()}",
-                section=PRSection.CLOSED,
+                query=f"is:pr is:closed closed:>={self._recent_date()}"
             ),
         }
 
@@ -217,7 +213,7 @@ class GitHubPRsClient:
 
         return data
 
-    def _fetch_and_enrich_with_pr_details(self, pr: PullRequest):
+    def _fetch_and_enrich_with_pr_details(self, pr: PullRequest) -> (PullRequest, bool):
         """Helper method to fetch details for a single PR"""
         try:
             # Get basic PR details
@@ -300,7 +296,7 @@ class GitHubPRsClient:
                 reviewer: state for reviewer, (_, state) in latest_reviews.items()
             }
 
-            return pr
+            return pr, False
 
         except Exception as e:
             print(f"Warning: Error fetching details for PR #{pr.number}: {e}")
@@ -313,12 +309,14 @@ class GitHubPRsClient:
             pr.latest_reviews = {}
             pr.merged = False
             pr.merged_by = None
-            return pr
+            return pr, True
 
-    def get_pr_data(self, users, section: PRSection = None, settings=None):
+    def get_pr_data(
+        self, users: List[str], section: PRSection = None, settings: Settings = None
+    ) -> Dict[PRSection, Dict[str, List[Tuple[PullRequest, bool]]]]:
         """Get PR data from GitHub API with parallel processing"""
         if self._shutdown:
-            return {}, {}, {}, {}
+            return {}
 
         try:
             # Process only requested section or all sections
@@ -328,28 +326,26 @@ class GitHubPRsClient:
             if settings:
                 recent_days = settings.thresholds.recently_closed_days
                 self.section_queries[PRSection.CLOSED] = PRQueryConfig(
-                    query=f"is:pr is:closed closed:>={self._recent_date(recent_days)}",
-                    section=PRSection.CLOSED,
+                    query=f"is:pr is:closed closed:>={self._recent_date(recent_days)}"
                 )
 
-            results = {}
+            prs_by_author_by_section = {}
             for section in sections_to_process:
                 query_config = self.section_queries[section]
-                results[section] = self._fetch_section_data(users, query_config)
+                prs_by_author_by_section[section] = self._fetch_prs_by_author(
+                    users, query_config
+                )
 
-            return (
-                results.get(PRSection.OPEN, {}),
-                results.get(PRSection.REVIEW, {}),
-                results.get(PRSection.ATTENTION, {}),
-                results.get(PRSection.CLOSED, {}),
-            )
+            return prs_by_author_by_section
 
         except Exception as e:
             print(f"Error in get_pr_data: {e}")
             traceback.print_exc()
-            return {}, {}, {}, {}
+            return {}
 
-    def _fetch_section_data(self, users, query_config: PRQueryConfig):
+    def _fetch_prs_by_author(
+        self, users, query_config: PRQueryConfig
+    ) -> Dict[str, List[Tuple[PullRequest, bool]]]:
         """Fetch PR data for a specific section"""
         try:
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -378,9 +374,9 @@ class GitHubPRsClient:
                         for detail_future in detail_futures:
                             if self._shutdown:
                                 break
-                            pr_with_details = detail_future.result()
+                            pr_with_details, partial = detail_future.result()
                             if pr_with_details:
-                                prs_with_details.append(pr_with_details)
+                                prs_with_details.append((pr_with_details, partial))
 
                         if prs_with_details:  # Only add if we have PRs
                             section_results[user] = prs_with_details

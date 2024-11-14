@@ -1,4 +1,5 @@
 import traceback
+from typing import Dict
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
@@ -13,7 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.github_prs_client import GitHubPRsClient
+from src.github_prs_client import GitHubPRsClient, PRSection
 from src.notifications import notify
 from src.objects import PullRequest
 from src.settings import RefreshInterval, Settings
@@ -305,9 +306,9 @@ class MainWindow(QMainWindow):
             self._show_loading_state()
 
             self.refresh_worker = RefreshWorker(
-                self.github_prs_client, 
-                users, 
-                settings=self.settings  # Pass settings to worker
+                self.github_prs_client,
+                users,
+                settings=self.settings,  # Pass settings to worker
             )
             self.refresh_worker.finished.connect(self._handle_refresh_complete)
             self.refresh_worker.error.connect(self._handle_refresh_error)
@@ -328,19 +329,28 @@ class MainWindow(QMainWindow):
 
         self.loading_label.hide()
 
-    def _handle_refresh_complete(self, data):
+    def _handle_refresh_complete(
+        self,
+        prs_by_author_by_section: Dict[PRSection, Dict[str, list[(PullRequest, bool)]]],
+    ):
         """Handle completion of refresh operation"""
         try:
-            # Unpack data tuple
-            open_prs, needs_review, changes_requested, recently_closed = data
-
             # Save each section's data
-            self.ui_state.update_pr_data(SectionName.OPEN_PRS, open_prs)
-            self.ui_state.update_pr_data(SectionName.NEEDS_REVIEW, needs_review)
             self.ui_state.update_pr_data(
-                SectionName.CHANGES_REQUESTED, changes_requested
+                SectionName.OPEN_PRS, prs_by_author_by_section.get(PRSection.OPEN, {})
             )
-            self.ui_state.update_pr_data(SectionName.RECENTLY_CLOSED, recently_closed)
+            self.ui_state.update_pr_data(
+                SectionName.NEEDS_REVIEW,
+                prs_by_author_by_section.get(PRSection.CHANGED_REQUESTED, {}),
+            )
+            self.ui_state.update_pr_data(
+                SectionName.CHANGES_REQUESTED,
+                prs_by_author_by_section.get(PRSection.NEEDS_REVIEW, {}),
+            )
+            self.ui_state.update_pr_data(
+                SectionName.RECENTLY_CLOSED,
+                prs_by_author_by_section.get(PRSection.CLOSED, {}),
+            )
             self.ui_state.save()
             self.apply_filters()
 

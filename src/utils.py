@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List, T
 
 
 def hex_to_rgba(bg_color, opacity):
@@ -14,3 +15,11 @@ def parse_datetime(time_str: str) -> datetime | None:
     if time_str is None:
         return None
     return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+
+
+def print_time(time_obj):
+    return time_obj.strftime("%d-%m-%Y %H:%M:%S")
+
+
+def flatten(list_of_lists: List[List[T]]) -> List[T]:
+    return [item for sublist in list_of_lists for item in sublist]

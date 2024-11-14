@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 
 from .themes import Colors, Styles
 from ..objects import PullRequest
-from ..utils import hex_to_rgba
+from ..utils import hex_to_rgba, print_time
 
 
 class JsonViewDialog(QDialog):
@@ -126,35 +126,6 @@ def format_time(delta, suffix="") -> str:
     return f"{days} days{suffix}"
 
 
-def calculate_pr_age_days(pr: PullRequest) -> tuple[int, str]:
-    """Calculate PR age in days and return formatted string"""
-    if not pr.created_at:
-        return 0, "0 seconds old"
-
-    if isinstance(pr.created_at, str):
-        # Handle both +00:00 and Z format
-        created_at = datetime.fromisoformat(pr.created_at.replace("Z", "+00:00"))
-    else:
-        created_at = pr.created_at
-
-    # Ensure both datetimes are timezone-aware
-    now = datetime.now().astimezone()
-    if created_at.tzinfo is None:
-        created_at = created_at.astimezone()
-
-    delta = now - created_at
-    days = delta.days
-
-    return days, format_time(delta, suffix=" old")
-
-
-def calculate_merge_duration(pr: PullRequest) -> timedelta:
-    """Calculate the duration it took to merge the PR."""
-    if not pr.merged_at:
-        return timedelta(0)
-    return pr.merged_at - pr.created_at
-
-
 def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     """Create a card widget for a pull request"""
     # Simplified debug logging - only show essential info
@@ -215,16 +186,13 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     info_layout.setSpacing(2)
 
     # Repository info
-    repo_text = f"{pr.repo_owner}/{pr.repo_name} | author: {pr.user.login if pr.user else 'N/A'}"
-    repo_label = QLabel(repo_text)
-    repo_label.setStyleSheet(Styles.PR_CARD_LABELS)
-    info_layout.addWidget(repo_label)
-
-    # Author info
-    if pr.approved_by:
-        approver_label = QLabel(f"approved by: {pr.approved_by[0]}")
-        approver_label.setStyleSheet(Styles.PR_CARD_LABELS)
-        info_layout.addWidget(approver_label)
+    approved_by_text = (
+        f" | approved by: {', '.join(pr.approved_by)}" if pr.approved_by else ""
+    )
+    info_text = f"{pr.repo_owner}/{pr.repo_name} | author: {pr.user.login if pr.user else 'N/A'}{approved_by_text}"
+    info_label = QLabel(info_text)
+    info_label.setStyleSheet(Styles.PR_CARD_LABELS)
+    info_layout.addWidget(info_label)
 
     info_layout.addStretch()
     title_layout.addWidget(info_container)
@@ -243,19 +211,19 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     header.addLayout(top_row)
 
     # Status badge (MERGED/CLOSED/OPEN)
-    status_color = "#28a745"  # Default green for open
+    status_color = Colors.GREEN
     status_text = "OPEN"
     tooltip = f"Opened at: {pr.created_at}"
 
     if pr.merged or pr.merged_at:
-        status_color = "#6f42c1"  # Purple for merged
+        status_color = Colors.PURPLE  # Purple for merged
         status_text = "MERGED"
         tooltip = (
-            f"Merged at: {pr.merged_at.strftime('MM-DD-YYYY HH:mm:ss')}\n"
+            f"Merged at: {print_time(pr.merged_at)}\n"
             f"Time since merge: {format_time(datetime.now().astimezone() - pr.merged_at)}"
         )
     elif pr.closed_at:
-        status_color = "#dc3545"  # Red for closed
+        status_color = Colors.RED
         status_text = "CLOSED"
         tooltip = f"Closed at: {pr.closed_at}"
 
@@ -294,17 +262,14 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     json_button.clicked.connect(show_json)
     files_count = pr.changed_files or 0
     if files_count > 0:
-        files_warning = settings.thresholds.files.warning
-        files_danger = settings.thresholds.files.danger
-
-        if files_count >= files_danger:
-            badge_color = "#dc3545"  # Red
-        elif files_count >= files_warning:
-            badge_color = "#ffc107"  # Yellow
-        else:
-            badge_color = "#28a745"  # Green
-
-        files_badge = create_badge(f"{files_count} files", badge_color, opacity=0.5)
+        files_badge_color = compute_color(
+            files_count,
+            settings.thresholds.files.warning,
+            settings.thresholds.files.danger,
+        )
+        files_badge = create_badge(
+            f"{files_count} files", files_badge_color, opacity=0.5
+        )
         bottom_layout.addWidget(files_badge)
 
     # Changes badge
@@ -318,49 +283,72 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     comment_count_badge = create_badge(
         f"{sum(pr.comment_count_by_author.values())} comments", "#007bff", opacity=0.5
     )
+    comments_by_author_str = "\n".join(
+        "{}: {}".format(author, comment_count)
+        for author, comment_count in pr.comment_count_by_author.items()
+    )
+    comment_count_badge.setToolTip(f"Comments by author:\n" f"{comments_by_author_str}")
     bottom_layout.addWidget(comment_count_badge)
 
     # Age badge
-    age_days, age_text = calculate_pr_age_days(pr)
+    pr_age = datetime.now().astimezone() - pr.created_at
+    age_badge_color = compute_color(
+        pr_age.days,
+        settings.thresholds.age.warning.to_days(),
+        settings.thresholds.age.danger.to_days(),
+    )
 
-    # Determine color based on thresholds
-    if age_days >= settings.thresholds.age.danger.to_days():
-        badge_color = "#dc3545"  # Red
-    elif age_days >= settings.thresholds.age.warning.to_days():
-        badge_color = "#ffc107"  # Yellow
-    else:
-        badge_color = "#28a745"  # Green
-
-    age_badge = create_badge(age_text, badge_color, opacity=0.5)
+    age_badge = create_badge(
+        f"{format_time(pr_age, ' old')}", age_badge_color, opacity=0.5
+    )
+    age_badge.setToolTip(f"Created at: {print_time(pr.created_at)}")
     bottom_layout.addWidget(age_badge)
 
     # Add merge duration badge if PR is merged
     if pr.merged_at:
-        merge_duration = calculate_merge_duration(pr)
-
-        # Convert days to the same unit as the thresholds
-        ttm = settings.thresholds.time_to_merge
-        warning_days = ttm.warning.to_days()
-        danger_days = ttm.danger.to_days()
+        merge_duration = pr.merged_at - pr.created_at
 
         # Determine color based on thresholds
-        if merge_duration.days >= danger_days:
-            badge_color = "#dc3545"  # Red
-        elif merge_duration.days >= warning_days:
-            badge_color = "#ffc107"  # Yellow
-        else:
-            badge_color = "#28a745"  # Green
+        merge_duration_badge_color = compute_color(
+            merge_duration.days,
+            settings.thresholds.time_to_merge.warning.to_days(),
+            settings.thresholds.time_to_merge.danger.to_days(),
+        )
 
         merge_duration_badge = create_badge(
-            f"TTM: {format_time(merge_duration)}", badge_color, opacity=0.5
+            f"TTM: {format_time(merge_duration)}",
+            merge_duration_badge_color,
+            opacity=0.5,
         )
         merge_duration_badge.setToolTip(
             f"Time it took to merge: {format_time(merge_duration)}"
         )
         bottom_layout.addWidget(merge_duration_badge)
 
+    if pr.last_comment_time:
+        time_since_last_comment = datetime.now().astimezone() - pr.last_comment_time
+
+        time_since_last_comment_badge = create_badge(
+            f"TSLC: {format_time(time_since_last_comment)}", Colors.INFO, opacity=0.5
+        )
+        time_since_last_comment_badge.setToolTip(
+            f"Time Since Last Comment: {format_time(time_since_last_comment)}\n"
+            f"Last Comment at: {print_time(pr.last_comment_time)}\n"
+            f"Last Comment by: {pr.last_comment_author}"
+        )
+        bottom_layout.addWidget(time_since_last_comment_badge)
+
     bottom_layout.addStretch()
     header.addLayout(bottom_layout)
     layout.addLayout(header)
 
     return card
+
+
+def compute_color(value, warning_threshold, danger_threshold):
+    if value >= warning_threshold:
+        return Colors.RED
+    elif value >= danger_threshold:
+        return Colors.YELLOW
+    else:
+        return Colors.GREEN
