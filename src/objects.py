@@ -3,6 +3,8 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Dict
 
+from src.utils import parse_datetime
+
 
 @dataclass
 class User:
@@ -281,10 +283,10 @@ class PullRequest:
     number: int
     title: str
     state: str
-    created_at: str
-    updated_at: str
-    closed_at: Optional[str]
-    merged_at: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    closed_at: Optional[datetime]
+    merged_at: Optional[datetime]
     draft: bool
     user: User
     html_url: str
@@ -295,7 +297,7 @@ class PullRequest:
     additions: Optional[int] = None
     deletions: Optional[int] = None
     comment_count_by_author: Optional[Dict[str, int]] = None
-    last_comment_time: Optional[str] = None
+    last_comment_time: Optional[datetime] = None
     last_comment_author: Optional[str] = None
     approved_by: Optional[List[str]] = None
     latest_reviews: Optional[Dict[str, str]] = None
@@ -309,10 +311,10 @@ class PullRequest:
             "number": self.number,
             "title": self.title,
             "state": self.state,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "closed_at": self.closed_at,
-            "merged_at": self.merged_at,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None,
+            "merged_at": self.merged_at.isoformat() if self.merged_at else None,
             "draft": self.draft,
             "user": self.user.to_dict() if self.user else None,
             "html_url": self.html_url,
@@ -325,7 +327,9 @@ class PullRequest:
             "additions": self.additions,
             "deletions": self.deletions,
             "comment_count_by_author": self.comment_count_by_author,
-            "last_comment_time": self.last_comment_time,
+            "last_comment_time": (
+                self.last_comment_time.isoformat() if self.last_comment_time else None
+            ),
             "last_comment_author": self.last_comment_author,
             "approved_by": self.approved_by,
             "latest_reviews": self.latest_reviews,
@@ -353,10 +357,10 @@ class PullRequest:
                 number=pr_data["number"],
                 title=pr_data["title"],
                 state=pr_data["state"],
-                created_at=pr_data["created_at"],
-                updated_at=pr_data["updated_at"],
-                closed_at=pr_data.get("closed_at"),
-                merged_at=pr_data.get("merged_at"),
+                created_at=parse_datetime(pr_data["created_at"]),
+                updated_at=parse_datetime(pr_data["updated_at"]),
+                closed_at=parse_datetime(pr_data.get("closed_at")),
+                merged_at=parse_datetime(pr_data.get("merged_at")),
                 draft=pr_data.get("draft", False),
                 user=User.parse(pr_data["user"]),
                 html_url=pr_data["html_url"],
@@ -367,7 +371,7 @@ class PullRequest:
                 additions=pr_data.get("additions"),
                 deletions=pr_data.get("deletions"),
                 comment_count_by_author=pr_data.get("comment_count_by_author"),
-                last_comment_time=pr_data.get("last_comment_time"),
+                last_comment_time=parse_datetime(pr_data.get("last_comment_time")),
                 last_comment_author=pr_data.get("last_comment_author"),
                 approved_by=pr_data.get("approved_by"),
                 latest_reviews=pr_data.get("latest_reviews"),

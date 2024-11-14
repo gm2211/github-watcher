@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
 )
 import traceback
 
+from src.settings import TimeValue
+
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None, settings=None):
@@ -123,18 +125,46 @@ class SettingsDialog(QDialog):
         thresholds_layout.addWidget(deletions_group)
 
         # Age thresholds
-        age_group = QGroupBox("PR Age Thresholds (days)")
+        age_group = QGroupBox("PR Age Thresholds")
         age_layout = QFormLayout(age_group)
 
-        self.age_warning = QSpinBox()
-        self.age_warning.setRange(1, 30)
-        self.age_warning.setValue(self.settings.thresholds.age.warning)
-        age_layout.addRow("Warning Level:", self.age_warning)
+        # Warning threshold
+        warning_container = QWidget()
+        warning_layout = QHBoxLayout(warning_container)
+        warning_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.age_danger = QSpinBox()
-        self.age_danger.setRange(1, 90)
-        self.age_danger.setValue(self.settings.thresholds.age.danger)
-        age_layout.addRow("Danger Level:", self.age_danger)
+        self.age_warning_value = QSpinBox()
+        self.age_warning_value.setRange(1, 90)
+        self.age_warning_value.setValue(self.settings.thresholds.age.warning.value)
+        warning_layout.addWidget(self.age_warning_value)
+
+        self.age_warning_unit = QComboBox()
+        self.age_warning_unit.addItems(["minutes", "hours", "days"])
+        index = self.age_warning_unit.findText(self.settings.thresholds.age.warning.unit)
+        if index >= 0:
+            self.age_warning_unit.setCurrentIndex(index)
+        warning_layout.addWidget(self.age_warning_unit)
+
+        age_layout.addRow("Warning Level:", warning_container)
+
+        # Danger threshold
+        danger_container = QWidget()
+        danger_layout = QHBoxLayout(danger_container)
+        danger_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.age_danger_value = QSpinBox()
+        self.age_danger_value.setRange(1, 90)
+        self.age_danger_value.setValue(self.settings.thresholds.age.danger.value)
+        danger_layout.addWidget(self.age_danger_value)
+
+        self.age_danger_unit = QComboBox()
+        self.age_danger_unit.addItems(["minutes", "hours", "days"])
+        index = self.age_danger_unit.findText(self.settings.thresholds.age.danger.unit)
+        if index >= 0:
+            self.age_danger_unit.setCurrentIndex(index)
+        danger_layout.addWidget(self.age_danger_unit)
+
+        age_layout.addRow("Danger Level:", danger_container)
 
         thresholds_layout.addWidget(age_group)
 
@@ -148,6 +178,51 @@ class SettingsDialog(QDialog):
         recent_layout.addRow("Show PRs closed within (days):", self.recent_threshold)
 
         thresholds_layout.addWidget(recent_group)
+
+        # Add Time to Merge thresholds
+        ttm_group = QGroupBox("Time to Merge Thresholds")
+        ttm_layout = QFormLayout(ttm_group)
+
+        # Warning threshold
+        warning_container = QWidget()
+        warning_layout = QHBoxLayout(warning_container)
+        warning_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.ttm_warning_value = QSpinBox()
+        self.ttm_warning_value.setRange(1, 90)
+        self.ttm_warning_value.setValue(self.settings.thresholds.time_to_merge.warning.value)
+        warning_layout.addWidget(self.ttm_warning_value)
+
+        self.ttm_warning_unit = QComboBox()
+        self.ttm_warning_unit.addItems(["minutes", "hours", "days"])
+        index = self.ttm_warning_unit.findText(self.settings.thresholds.time_to_merge.warning.unit)
+        if index >= 0:
+            self.ttm_warning_unit.setCurrentIndex(index)
+        warning_layout.addWidget(self.ttm_warning_unit)
+
+        ttm_layout.addRow("Warning Level:", warning_container)
+
+        # Danger threshold
+        danger_container = QWidget()
+        danger_layout = QHBoxLayout(danger_container)
+        danger_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.ttm_danger_value = QSpinBox()
+        self.ttm_danger_value.setRange(1, 90)
+        self.ttm_danger_value.setValue(self.settings.thresholds.time_to_merge.danger.value)
+        danger_layout.addWidget(self.ttm_danger_value)
+
+        self.ttm_danger_unit = QComboBox()
+        self.ttm_danger_unit.addItems(["minutes", "hours", "days"])
+        index = self.ttm_danger_unit.findText(self.settings.thresholds.time_to_merge.danger.unit)
+        if index >= 0:
+            self.ttm_danger_unit.setCurrentIndex(index)
+        danger_layout.addWidget(self.ttm_danger_unit)
+
+        ttm_layout.addRow("Danger Level:", danger_container)
+
+        thresholds_layout.addWidget(ttm_group)
+
         thresholds_layout.addStretch()
 
         tabs.addTab(thresholds_tab, "Thresholds")
@@ -180,10 +255,24 @@ class SettingsDialog(QDialog):
             self.settings.thresholds.additions.danger = self.additions_danger.value()
             self.settings.thresholds.deletions.warning = self.deletions_warning.value()
             self.settings.thresholds.deletions.danger = self.deletions_danger.value()
-            self.settings.thresholds.age.warning = self.age_warning.value()
-            self.settings.thresholds.age.danger = self.age_danger.value()
+            self.settings.thresholds.age.warning = TimeValue(
+                value=self.age_warning_value.value(),
+                unit=self.age_warning_unit.currentText()
+            )
+            self.settings.thresholds.age.danger = TimeValue(
+                value=self.age_danger_value.value(),
+                unit=self.age_danger_unit.currentText()
+            )
             self.settings.thresholds.recently_closed_days = (
                 self.recent_threshold.value()
+            )
+            self.settings.thresholds.time_to_merge.warning = TimeValue(
+                value=self.ttm_warning_value.value(),
+                unit=self.ttm_warning_unit.currentText()
+            )
+            self.settings.thresholds.time_to_merge.danger = TimeValue(
+                value=self.ttm_danger_value.value(),
+                unit=self.ttm_danger_unit.currentText()
             )
 
             # Save settings

@@ -1,4 +1,4 @@
-from typing import Tuple
+from datetime import datetime
 
 
 def hex_to_rgba(bg_color, opacity):
@@ -8,3 +8,9 @@ def hex_to_rgba(bg_color, opacity):
         b = int(bg_color[5:7], 16)
         bg_color = f"rgba({r}, {g}, {b}, {opacity})"
     return bg_color
+
+
+def parse_datetime(time_str: str) -> datetime | None:
+    if time_str is None:
+        return None
+    return datetime.fromisoformat(time_str.replace("Z", "+00:00"))

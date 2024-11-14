@@ -1,13 +1,14 @@
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
 from dataclasses import dataclass
-from enum import Enum, auto
+from datetime import datetime, timedelta
+from enum import auto, Enum
 
 import requests
 
 from src.notifications import notify
 from src.objects import PullRequest, TimelineEvent
+from src.utils import parse_datetime
 
 DATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -225,7 +226,7 @@ class GitHubPRsClient:
                 pr.changed_files = details.get("changed_files")
                 pr.additions = details.get("additions")
                 pr.deletions = details.get("deletions")
-                pr.merged_at = details.get("merged_at")
+                pr.merged_at = parse_datetime(details.get("merged_at"))
                 pr.merged = details.get("merged", False)
                 pr.merged_by = (
                     details.get("merged_by", {}).get("login")
@@ -267,9 +268,7 @@ class GitHubPRsClient:
                     comment_count_by_author.get(author, 0) + 1
                 )
 
-                comment_time = datetime.fromisoformat(
-                    comment["created_at"].replace("Z", "+00:00")
-                )
+                comment_time = parse_datetime(comment["created_at"])
                 if last_comment_time is None or comment_time > last_comment_time:
                     last_comment_time = comment_time
                     last_comment_author = author
@@ -279,9 +278,7 @@ class GitHubPRsClient:
             latest_reviews = {}  # Track latest review by each reviewer
             for review in reviews:
                 reviewer = review["user"]["login"]
-                review_time = datetime.fromisoformat(
-                    review["submitted_at"].replace("Z", "+00:00")
-                )
+                review_time = parse_datetime(review["submitted_at"])
 
                 # Update latest review for this reviewer
                 if (
@@ -296,9 +293,7 @@ class GitHubPRsClient:
 
             # Add new attributes to PR
             pr.comment_count_by_author = comment_count_by_author
-            pr.last_comment_time = (
-                last_comment_time.isoformat() if last_comment_time else None
-            )
+            pr.last_comment_time = last_comment_time
             pr.last_comment_author = last_comment_author
             pr.approved_by = list(approved_by)
             pr.latest_reviews = {
@@ -320,7 +315,7 @@ class GitHubPRsClient:
             pr.merged_by = None
             return pr
 
-    def get_pr_data(self, users, section: PRSection = None):
+    def get_pr_data(self, users, section: PRSection = None, settings=None):
         """Get PR data from GitHub API with parallel processing"""
         if self._shutdown:
             return {}, {}, {}, {}
@@ -329,12 +324,19 @@ class GitHubPRsClient:
             # Process only requested section or all sections
             sections_to_process = [section] if section else self.section_queries.keys()
 
+            # Update the CLOSED query with current threshold if settings provided
+            if settings:
+                recent_days = settings.thresholds.recently_closed_days
+                self.section_queries[PRSection.CLOSED] = PRQueryConfig(
+                    query=f"is:pr is:closed closed:>={self._recent_date(recent_days)}",
+                    section=PRSection.CLOSED,
+                )
+
             results = {}
             for section in sections_to_process:
                 query_config = self.section_queries[section]
                 results[section] = self._fetch_section_data(users, query_config)
 
-            # Create final data structure
             return (
                 results.get(PRSection.OPEN, {}),
                 results.get(PRSection.REVIEW, {}),
@@ -393,9 +395,9 @@ class GitHubPRsClient:
             return {}
 
     @staticmethod
-    def _recent_date():
+    def _recent_date(days=7):
         """Get the date threshold for recently closed PRs"""
-        date_threshold = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        date_threshold = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         return date_threshold
 
     @staticmethod

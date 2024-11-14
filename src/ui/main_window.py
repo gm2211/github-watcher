@@ -173,7 +173,6 @@ class MainWindow(QMainWindow):
                 if settings:
                     self._apply_settings_changes(settings)
         except Exception as e:
-
             QMessageBox.critical(self, "Error", f"Failed to show settings: {str(e)}")
 
     def _apply_settings_changes(self, new_settings):
@@ -197,7 +196,10 @@ class MainWindow(QMainWindow):
             if new_settings.users != previous_settings.users:
                 self.refresh_data()  # This will also apply filters / update UI
             else:
+                # Even if users haven't changed, we should reapply filters
+                # because thresholds might have changed
                 self.apply_filters()
+
         except Exception as e:
             print(f"Error applying settings: {e}")
             traceback.print_exc()
@@ -302,14 +304,17 @@ class MainWindow(QMainWindow):
             self.is_refreshing = True
             self._show_loading_state()
 
-            self.refresh_worker = RefreshWorker(self.github_prs_client, users)
+            self.refresh_worker = RefreshWorker(
+                self.github_prs_client, 
+                users, 
+                settings=self.settings  # Pass settings to worker
+            )
             self.refresh_worker.finished.connect(self._handle_refresh_complete)
             self.refresh_worker.error.connect(self._handle_refresh_error)
             self.workers.append(self.refresh_worker)
             self.refresh_worker.start()
 
         except Exception as e:
-
             self._handle_refresh_error(str(e))
             self.is_refreshing = False
 

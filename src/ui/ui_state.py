@@ -1,3 +1,4 @@
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -148,6 +149,7 @@ class UIState:
             return UIState.from_dict(data, state_path)
         except Exception as e:
             print(f"Error loading UI state: {e}")
+            traceback.print_exc()
             return UIState(state_file=state_path)
 
     def save(self) -> None:
@@ -157,3 +159,4 @@ class UIState:
                 json.dump(self.to_dict(), f, indent=2)
         except Exception as e:
             print(f"Error saving UI state: {e}")
+            traceback.print_exc()

@@ -1,6 +1,6 @@
 import json
 import webbrowser
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from typing import Optional
 
 from PyQt6.QtCore import Qt
@@ -148,14 +148,11 @@ def calculate_pr_age_days(pr: PullRequest) -> tuple[int, str]:
     return days, format_time(delta, suffix=" old")
 
 
-def calculate_merge_duration(pr: PullRequest) -> Optional[str]:
+def calculate_merge_duration(pr: PullRequest) -> timedelta:
     """Calculate the duration it took to merge the PR."""
-    if pr.created_at and pr.merged_at:
-        created_at = datetime.fromisoformat(pr.created_at.replace("Z", "+00:00"))
-        merged_at = datetime.fromisoformat(pr.merged_at.replace("Z", "+00:00"))
-        duration = merged_at - created_at
-        return format_time(duration)
-    return None
+    if not pr.merged_at:
+        return timedelta(0)
+    return pr.merged_at - pr.created_at
 
 
 def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
@@ -248,15 +245,22 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     # Status badge (MERGED/CLOSED/OPEN)
     status_color = "#28a745"  # Default green for open
     status_text = "OPEN"
+    tooltip = f"Opened at: {pr.created_at}"
 
     if pr.merged or pr.merged_at:
         status_color = "#6f42c1"  # Purple for merged
         status_text = "MERGED"
+        tooltip = (
+            f"Merged at: {pr.merged_at.strftime('MM-DD-YYYY HH:mm:ss')}\n"
+            f"Time since merge: {format_time(datetime.now().astimezone() - pr.merged_at)}"
+        )
     elif pr.closed_at:
         status_color = "#dc3545"  # Red for closed
         status_text = "CLOSED"
+        tooltip = f"Closed at: {pr.closed_at}"
 
     status_badge = create_badge(status_text, status_color, opacity=0.5)
+    status_badge.setToolTip(tooltip)
     right_layout.addWidget(status_badge)
 
     # Draft badge
@@ -312,12 +316,16 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
 
     # Age badge
     age_days, age_text = calculate_pr_age_days(pr)
-    age_warning = settings.thresholds.age.warning
-    age_danger = settings.thresholds.age.danger
 
-    if age_days >= age_danger:
+    # Convert days to the same unit as the thresholds
+    age_thresholds = settings.thresholds.age
+    warning_days = age_thresholds.warning.to_days()
+    danger_days = age_thresholds.danger.to_days()
+
+    # Determine color based on thresholds
+    if age_days >= danger_days:
         badge_color = "#dc3545"  # Red
-    elif age_days >= age_warning:
+    elif age_days >= warning_days:
         badge_color = "#ffc107"  # Yellow
     else:
         badge_color = "#28a745"  # Green
@@ -328,8 +336,25 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
     # Add merge duration badge if PR is merged
     if pr.merged_at:
         merge_duration = calculate_merge_duration(pr)
+
+        # Convert days to the same unit as the thresholds
+        ttm = settings.thresholds.time_to_merge
+        warning_days = ttm.warning.to_days()
+        danger_days = ttm.danger.to_days()
+
+        # Determine color based on thresholds
+        if merge_duration.days >= danger_days:
+            badge_color = "#dc3545"  # Red
+        elif merge_duration.days >= warning_days:
+            badge_color = "#ffc107"  # Yellow
+        else:
+            badge_color = "#28a745"  # Green
+
         merge_duration_badge = create_badge(
-            f"TTM: {merge_duration}", Colors.SUCCESS_BG, opacity=0.5
+            f"TTM: {format_time(merge_duration)}", badge_color, opacity=0.5
+        )
+        merge_duration_badge.setToolTip(
+            f"Time it took to merge: {format_time(merge_duration)}"
         )
         bottom_layout.addWidget(merge_duration_badge)
 

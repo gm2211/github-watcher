@@ -2,7 +2,6 @@ import os
 import traceback
 from dataclasses import asdict, dataclass, field
 from typing import List
-from datetime import datetime
 
 import yaml
 
@@ -14,11 +13,38 @@ class ThresholdPair:
 
 
 @dataclass
+class TimeValue:
+    value: int
+    unit: str = "days"  # days, hours, minutes
+
+    def to_days(self) -> float:
+        """Convert the value to days for comparison"""
+        if self.unit == "days":
+            return self.value
+        elif self.unit == "hours":
+            return self.value / 24
+        else:  # minutes
+            return self.value / (24 * 60)
+
+
+@dataclass
+class TimeThreshold:
+    warning: TimeValue = field(default_factory=lambda: TimeValue(4, "days"))
+    danger: TimeValue = field(default_factory=lambda: TimeValue(10, "days"))
+
+
+@dataclass
 class Thresholds:
     files: ThresholdPair = field(default_factory=lambda: ThresholdPair(10, 50))
     additions: ThresholdPair = field(default_factory=lambda: ThresholdPair(500, 1000))
     deletions: ThresholdPair = field(default_factory=lambda: ThresholdPair(500, 2000))
-    age: ThresholdPair = field(default_factory=lambda: ThresholdPair(7, 14))
+    age: TimeThreshold = field(
+        default_factory=lambda: TimeThreshold(
+            warning=TimeValue(7, "days"),
+            danger=TimeValue(14, "days")
+        )
+    )
+    time_to_merge: TimeThreshold = field(default_factory=TimeThreshold)
     recently_closed_days: int = 7
 
 
@@ -57,19 +83,47 @@ class Settings:
                 data = yaml.safe_load(f) or {}
 
             # Create settings instance with loaded data
+            thresholds_data = data.get("thresholds", {})
+            time_to_merge_data = thresholds_data.get("time_to_merge", {})
+            age_data = thresholds_data.get("age", {})
+            
+            # Create TimeThreshold objects
+            time_to_merge = TimeThreshold(
+                warning=TimeValue(
+                    value=time_to_merge_data.get("warning", {}).get("value", 4),
+                    unit=time_to_merge_data.get("warning", {}).get("unit", "days")
+                ),
+                danger=TimeValue(
+                    value=time_to_merge_data.get("danger", {}).get("value", 10),
+                    unit=time_to_merge_data.get("danger", {}).get("unit", "days")
+                )
+            )
+
+            age = TimeThreshold(
+                warning=TimeValue(
+                    value=age_data.get("warning", {}).get("value", 7),
+                    unit=age_data.get("warning", {}).get("unit", "days")
+                ),
+                danger=TimeValue(
+                    value=age_data.get("danger", {}).get("value", 14),
+                    unit=age_data.get("danger", {}).get("unit", "days")
+                )
+            )
+
             settings = cls(
                 users=data.get("users", []),
                 refresh=RefreshInterval(**data.get("refresh", {})),
                 thresholds=Thresholds(
-                    files=ThresholdPair(**data.get("thresholds", {}).get("files", {})),
+                    files=ThresholdPair(**thresholds_data.get("files", {})),
                     additions=ThresholdPair(
-                        **data.get("thresholds", {}).get("additions", {})
+                        **thresholds_data.get("additions", {})
                     ),
                     deletions=ThresholdPair(
-                        **data.get("thresholds", {}).get("deletions", {})
+                        **thresholds_data.get("deletions", {})
                     ),
-                    age=ThresholdPair(**data.get("thresholds", {}).get("age", {})),
-                    recently_closed_days=data.get("thresholds", {}).get(
+                    age=age,
+                    time_to_merge=time_to_merge,
+                    recently_closed_days=thresholds_data.get(
                         "recently_closed_days", 7
                     ),
                 ),
@@ -94,6 +148,7 @@ class Settings:
                     "additions": asdict(self.thresholds.additions),
                     "deletions": asdict(self.thresholds.deletions),
                     "age": asdict(self.thresholds.age),
+                    "time_to_merge": asdict(self.thresholds.time_to_merge),
                     "recently_closed_days": self.thresholds.recently_closed_days,
                 },
             }
