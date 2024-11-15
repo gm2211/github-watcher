@@ -75,7 +75,7 @@ def get_github_api_key():
                 None,
                 "GitHub API Token",
                 "Please paste your new GitHub API token:",
-                echo=QInputDialog.EchoMode.Password,
+                echo=QInputDialog.InputMode.Password,
             )
 
             if ok and token:
