@@ -1,3 +1,5 @@
+import traceback
+
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -12,14 +14,13 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-import traceback
 
-from src.settings import TimeValue
+from src.settings import TimeValue, Settings
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent=None, settings=None):
-        super().__init__(parent)
+    def __init__(self, settings: Settings):
+        super().__init__(None)
         self.setWindowTitle("Settings")
         self.setMinimumWidth(400)
         self.settings = settings
@@ -280,7 +281,7 @@ class SettingsDialog(QDialog):
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
 
-    def get_settings(self):
+    def get_settings(self) -> Settings:
         """Get current settings from dialog"""
         try:
             # Update users
@@ -328,7 +329,6 @@ class SettingsDialog(QDialog):
             )
 
             # Save settings
-            self.settings.save()
             return self.settings
 
         except Exception as e:

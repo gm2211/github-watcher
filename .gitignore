@@ -7,6 +7,5 @@ dist/
 .eggs
 users.txt
 run.env
-settings.yaml
 settings.yml
 **/state.json

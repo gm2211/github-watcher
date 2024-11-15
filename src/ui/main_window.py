@@ -23,8 +23,8 @@ from src.ui.pr_card import create_pr_card
 from src.ui.refresh_worker import RefreshWorker
 from src.ui.section_frame import SectionFrame
 from src.ui.settings_dialog import SettingsDialog
-from src.ui.ui_state import SectionName, UIState
 from src.ui.themes import Colors, Styles
+from src.ui.ui_state import SectionName, UIState
 
 
 class MainWindow(QMainWindow):
@@ -35,7 +35,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.github_prs_client = github_prs_client
         self.ui_state: UIState = ui_state
-        self.settings = settings
+        self.settings: Settings = settings
         self.auto_refresh_timer: QTimer | None = None
         self.setWindowTitle("GitHub PR Watcher")
         self.setStyleSheet(Styles.MAIN_WINDOW)
@@ -168,10 +168,11 @@ class MainWindow(QMainWindow):
     def show_settings(self):
         """Show settings dialog"""
         try:
-            dialog = SettingsDialog(self, self.settings)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                settings = dialog.get_settings()
+            settings_dialog = SettingsDialog(self.settings)
+            if settings_dialog.exec() == QDialog.DialogCode.Accepted:
+                settings = settings_dialog.get_settings()
                 if settings:
+                    settings.save()
                     self._apply_settings_changes(settings)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to show settings: {str(e)}")

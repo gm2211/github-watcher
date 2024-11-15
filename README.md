@@ -19,6 +19,8 @@ This was equally about creating a useful tool for work, as well as playing aroun
 pip install github-pr-watcher
 ```
 
+If that doesn't work, try using a versioned variant like `pip3.11 install github-pr-watcher` or `pipx`.
+
 or download the latest release from the [releases page](https://github.com/gm2211/github-watcher/releases).
 
 ## Usage
