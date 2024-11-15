@@ -9,4 +9,4 @@ then
 fi
 
 poetry install
-poetry run python "$DIR"/src/main.py
+poetry run python "$DIR"/github_pr_watcher/main.py

@@ -34,5 +34,5 @@ gpw
 ```
 or, if you have downloaded the release:
 ```bash
-cd /path/to/github-watcher && run.sh
+cd /path/to/github-pr-watcher && run.sh
 ```
