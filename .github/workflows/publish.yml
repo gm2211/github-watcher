@@ -37,6 +37,13 @@ jobs:
         branch: "version-bump/${{ env.VERSION }}"
         base: main
         delete-branch: true
+
+    - name: Approve Pull Request
+      if: steps.cpr.outputs.pull-request-number
+      uses: juliangruber/approve-pull-request-action@v2
+      with:
+        github-token: '${{ secrets.GITHUB_TOKEN }}'
+        number: ${{ steps.cpr.outputs.pull-request-number }}
         
     - name: Enable and wait for PR merge
       if: steps.cpr.outputs.pull-request-number
