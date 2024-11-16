@@ -29,7 +29,7 @@ jobs:
       id: cpr
       uses: peter-evans/create-pull-request@v5
       with:
-        token: '${{ secrets.GITHUB_TOKEN }}'
+        token: '${{ secrets.PERSONAL_TOKEN }}'
         commit-message: "Bump version to ${{ env.VERSION }}"
         title: "Bump version to ${{ env.VERSION }}"
         body: |
