@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "github-pr-watcher"
-version = "1.13.0"
+version = "1.15.0"
 repository = "https://github.com/gm2211/github-watcher"
 description = "A MacOs UI tool to monitor GitHub Pull Requests"
 authors = ["gm2211 <gmecocci@outlook.com>"]
