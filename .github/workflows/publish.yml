@@ -42,7 +42,7 @@ jobs:
       if: steps.cpr.outputs.pull-request-number
       uses: juliangruber/approve-pull-request-action@v2
       with:
-        github-token: '${{ secrets.PERSONAL_TOKEN }}'
+        github-token: '${{ github.token }}'
         number: ${{ steps.cpr.outputs.pull-request-number }}
         
     - name: Enable and wait for PR merge
