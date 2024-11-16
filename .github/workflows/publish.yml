@@ -17,7 +17,7 @@ jobs:
       with:
         ref: main
         fetch-depth: 0
-        token: ${{ secrets.PAT_TOKEN }}
+        ssh-key: ${{ secrets.DEPLOY_KEY }}
     
     - name: Update version in pyproject.toml
       run: |
@@ -30,7 +30,6 @@ jobs:
       id: cpr
       uses: peter-evans/create-pull-request@v5
       with:
-        token: ${{ secrets.PAT_TOKEN }}
         commit-message: "Bump version to ${{ env.VERSION }}"
         title: "Bump version to ${{ env.VERSION }}"
         body: |
@@ -62,7 +61,7 @@ jobs:
         # Checkout the updated main branch
         git pull origin main
       env:
-        GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        GH_TOKEN: ${{ github.token }}
 
   build-and-publish:
     needs: bump-version
