@@ -215,6 +215,13 @@ class GitHubPRsClient:
     def _fetch_and_enrich_with_pr_details(self, pr: PullRequest) -> (PullRequest, bool):
         """Helper method to fetch details for a single PR"""
         try:
+            # Get repository details first
+            repo_url = f"{self.base_url}/repos/{pr.repo_owner}/{pr.repo_name}"
+            repo_response = requests.get(repo_url, headers=self.headers)
+            if repo_response.status_code == 200:
+                repo_data = repo_response.json()
+                pr.archived = repo_data.get("archived", False)
+
             # Get basic PR details
             details = self.get_pr_details(pr.repo_owner, pr.repo_name, pr.number)
             if details:

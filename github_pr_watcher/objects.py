@@ -292,6 +292,7 @@ class PullRequest:
     html_url: str
     repo_owner: str
     repo_name: str
+    archived: bool = False
     timeline: Optional[List[TimelineEvent]] = None
     changed_files: Optional[int] = None
     additions: Optional[int] = None
@@ -320,6 +321,7 @@ class PullRequest:
             "html_url": self.html_url,
             "repo_owner": self.repo_owner,
             "repo_name": self.repo_name,
+            "archived": self.archived,
             "timeline": (
                 [event.to_dict() for event in self.timeline] if self.timeline else None
             ),
@@ -366,6 +368,7 @@ class PullRequest:
                 html_url=pr_data["html_url"],
                 repo_owner=pr_data["repo_owner"],
                 repo_name=pr_data["repo_name"],
+                archived=pr_data.get("archived", False),
                 timeline=timeline,
                 changed_files=pr_data.get("changed_files"),
                 additions=pr_data.get("additions"),

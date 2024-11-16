@@ -205,10 +205,12 @@ class FiltersBar(QWidget):
             ):
                 continue
 
-            # Apply draft and search filters
+            # Apply draft and search filters, always filter out archived
             filtered_user_prs = []
             for pr in prs:
                 if not self.filter_state.show_drafts and pr.draft:
+                    continue
+                if pr.archived:  # Always filter out archived repos
                     continue
                 if not self._matches_search(pr):
                     continue
@@ -216,10 +218,8 @@ class FiltersBar(QWidget):
 
             if filtered_user_prs:
                 if self.filter_state.group_by_user:
-                    # When grouping by user, keep the user structure
                     filtered_prs[user] = filtered_user_prs
                 else:
-                    # When not grouping by user, combine all PRs into a single list
                     filtered_prs.setdefault("all", []).extend(filtered_user_prs)
 
         return filtered_prs
