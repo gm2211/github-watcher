@@ -30,14 +30,14 @@ from github_pr_watcher.ui.ui_state import SectionName, UIState
 class MainWindow(QMainWindow):
 
     def __init__(
-        self, github_prs_client: GitHubPRsClient, ui_state: UIState, settings: Settings
+        self, github_prs_client: GitHubPRsClient, ui_state: UIState, settings: Settings, app_version: str
     ):
         super().__init__()
         self.github_prs_client = github_prs_client
         self.ui_state: UIState = ui_state
         self.settings: Settings = settings
         self.auto_refresh_timer: QTimer | None = None
-        self.setWindowTitle("GitHub PR Watcher")
+        self.setWindowTitle(f"GitHub PR Watcher - v{app_version}")
         self.setStyleSheet(Styles.MAIN_WINDOW)
         self.workers = []
         self.refresh_worker = None
