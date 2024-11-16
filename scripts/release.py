@@ -3,6 +3,7 @@ import argparse
 import re
 import subprocess
 import sys
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -209,6 +210,30 @@ def main():
     # Get token from keychain
     token = get_github_token()
 
+    # Check if local git is clean, if not prompt if user wants to continue
+    try:
+        subprocess.run(["git", "diff", "--quiet"], check=True)
+    except subprocess.CalledProcessError:
+        response = input("Local git repository is not clean. Continue? [y/n] ")
+        if response.lower() != "y":
+            sys.exit(0)
+
+    # get number of commits behind remote
+    num_commits_behind = int(subprocess.run(
+        ["git", "rev-list", "--count", "HEAD", "^origin/main"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout)
+    if num_commits_behind > 0:
+        response = input("Local git repository is not up-to-date with remote. Push changes? [y/n] ")
+        if response.lower() == "y":
+            subprocess.run(["git", "push"], check=True)
+        else:
+            response = input("Continue without pushing? [y/n] ")
+            if response.lower() != "y":
+                sys.exit(0)
+
     # Get latest git tag
     latest_tag = get_latest_git_tag()
     if latest_tag:
@@ -237,7 +262,7 @@ def main():
     if args.draft:
         print(f"Creating draft release for version: {new_version}")
 
-    response = input("\nContinue? [y/N] ")
+    response = input("\nContinue? [y/n] ")
     if response.lower() != "y":
         sys.exit(0)
 
