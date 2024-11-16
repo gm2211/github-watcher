@@ -238,16 +238,16 @@ def main():
     latest_tag = get_latest_git_tag()
     if latest_tag:
         current_version = Version.from_string(latest_tag)
-
+        print(f"\nCurrent version (from git tag): v{current_version}")
     else:
         current_version = Version.from_string(get_current_version() or "0.0.0")
+        print(f"\nNo git tags found. Using version from pyproject.toml: v{current_version}")
 
     # Determine new version
     if args.version:
         try:
             new_version = Version.from_string(args.version)
         except ValueError:
-
             sys.exit(1)
     elif args.major:
         new_version = current_version.bump_major()
@@ -256,11 +256,13 @@ def main():
     else:  # Default to minor bump
         new_version = current_version.bump_minor()
 
+    print(f"New version will be: v{new_version}")
+
     if args.prerelease:
-        print(f"Creating prerelease for version: {new_version}")
+        print("This will be marked as a prerelease")
 
     if args.draft:
-        print(f"Creating draft release for version: {new_version}")
+        print("This will be created as a draft release")
 
     response = input("\nContinue? [y/n] ")
     if response.lower() != "y":
