@@ -1,8 +1,7 @@
 import os
 import sys
-import time
 
-import tomli
+import tomllib as tomli
 import traceback
 from datetime import timedelta
 from pathlib import Path
