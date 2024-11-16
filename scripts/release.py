@@ -9,6 +9,9 @@ from typing import Optional
 
 import requests
 
+KEYCHAIN_SERVICE = "pr_watcher_github_api_key"
+KEYCHAIN_ACCOUNT = "token"
+
 
 @dataclass(order=True)
 class Version:
@@ -44,8 +47,6 @@ class Version:
 
 def get_github_token():
     """Get GitHub token from keychain, prompt if missing"""
-    KEYCHAIN_SERVICE = "github-watcher"
-    KEYCHAIN_ACCOUNT = "github-token"
 
     try:
         # Try to get token from keychain
@@ -70,7 +71,6 @@ def get_github_token():
     token = input("Enter your GitHub token: ").strip()
 
     if not token:
-
         sys.exit(1)
 
     # Save token to keychain
@@ -239,7 +239,6 @@ def main():
 
     response = input("\nContinue? [y/N] ")
     if response.lower() != "y":
-
         sys.exit(0)
 
     create_release(token, str(new_version), args.prerelease, args.draft)

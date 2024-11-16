@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 
 from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
-KEYCHAIN_SERVICE = "github_api_key"
+KEYCHAIN_SERVICE = "pr_watcher_github_api_key"
 KEYCHAIN_ACCOUNT = "token"
 
 # Define the required permissions
