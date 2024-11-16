@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.settings import TimeValue, Settings
+from github_pr_watcher.settings import TimeValue, Settings
 
 
 class SettingsDialog(QDialog):

@@ -12,8 +12,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.ui.themes import Colors, Styles
-from src.ui.ui_state import SectionName, UIState
+from github_pr_watcher.ui.themes import Colors, Styles
+from github_pr_watcher.ui.ui_state import SectionName, UIState
 
 
 class SectionFrame(QFrame):

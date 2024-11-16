@@ -7,10 +7,10 @@ from typing import Dict, List, Tuple
 
 import requests
 
-from src.notifications import notify
-from src.objects import PullRequest, TimelineEvent
-from src.settings import Settings
-from src.utils import parse_datetime
+from github_pr_watcher.notifications import notify
+from github_pr_watcher.objects import PullRequest, TimelineEvent
+from github_pr_watcher.settings import Settings
+from github_pr_watcher.utils import parse_datetime
 
 
 class PRSection(Enum):

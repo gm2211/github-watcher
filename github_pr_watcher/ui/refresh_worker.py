@@ -2,8 +2,8 @@ from typing import Dict, List, Tuple
 
 from PyQt6.QtCore import pyqtSignal, QThread
 
-from src.github_prs_client import PRSection
-from src.objects import PullRequest
+from github_pr_watcher.github_prs_client import PRSection
+from github_pr_watcher.objects import PullRequest
 
 
 class RefreshWorker(QThread):

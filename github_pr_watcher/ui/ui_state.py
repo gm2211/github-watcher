@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import json
 
-from src.objects import PullRequest
-from src.utils import flatten
+from github_pr_watcher.objects import PullRequest
+from github_pr_watcher.utils import flatten
 
 
 class SectionName(Enum):

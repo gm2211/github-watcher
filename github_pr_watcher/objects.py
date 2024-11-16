@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Dict
 
-from src.utils import parse_datetime
+from github_pr_watcher.utils import parse_datetime
 
 
 @dataclass

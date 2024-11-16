@@ -5,7 +5,7 @@ repository = "https://github.com/gm2211/github-watcher"
 description = "A MacOs UI tool to monitor GitHub Pull Requests"
 authors = ["gm2211 <gmecocci@outlook.com>"]
 readme = "README.md"
-packages = [{include = "src"}]
+packages = [{include = "github_pr_watcher"}]
 license = "AGPL-3.0-or-later"
 
 [tool.poetry.dependencies]

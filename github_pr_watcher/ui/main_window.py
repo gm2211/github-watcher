@@ -14,17 +14,17 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.github_prs_client import GitHubPRsClient, PRSection
-from src.notifications import notify
-from src.objects import PullRequest
-from src.settings import RefreshInterval, Settings
-from src.ui.filters import FiltersBar, FilterState
-from src.ui.pr_card import create_pr_card
-from src.ui.refresh_worker import RefreshWorker
-from src.ui.section_frame import SectionFrame
-from src.ui.settings_dialog import SettingsDialog
-from src.ui.themes import Colors, Styles
-from src.ui.ui_state import SectionName, UIState
+from github_pr_watcher.github_prs_client import GitHubPRsClient, PRSection
+from github_pr_watcher.notifications import notify
+from github_pr_watcher.objects import PullRequest
+from github_pr_watcher.settings import RefreshInterval, Settings
+from github_pr_watcher.ui.filters import FiltersBar, FilterState
+from github_pr_watcher.ui.pr_card import create_pr_card
+from github_pr_watcher.ui.refresh_worker import RefreshWorker
+from github_pr_watcher.ui.section_frame import SectionFrame
+from github_pr_watcher.ui.settings_dialog import SettingsDialog
+from github_pr_watcher.ui.themes import Colors, Styles
+from github_pr_watcher.ui.ui_state import SectionName, UIState
 
 
 class MainWindow(QMainWindow):

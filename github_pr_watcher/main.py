@@ -7,11 +7,11 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from src.github_auth import get_github_api_key
-from src.github_prs_client import GitHubPRsClient
-from src.settings import Settings
-from src.ui.main_window import MainWindow
-from src.ui.ui_state import UIState
+from github_pr_watcher.github_auth import get_github_api_key
+from github_pr_watcher.github_prs_client import GitHubPRsClient
+from github_pr_watcher.settings import Settings
+from github_pr_watcher.ui.main_window import MainWindow
+from github_pr_watcher.ui.ui_state import UIState
 
 VERSION = "1.0.0"
 
