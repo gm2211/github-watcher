@@ -173,10 +173,10 @@ class SettingsDialog(QDialog):
         recent_group = QGroupBox("Recently Closed Settings")
         recent_layout = QFormLayout(recent_group)
 
-        self.recent_threshold = QSpinBox()
-        self.recent_threshold.setRange(1, 30)
-        self.recent_threshold.setValue(self.settings.thresholds.recently_closed_days)
-        recent_layout.addRow("Show PRs closed within (days):", self.recent_threshold)
+        self.recently_closed_threshold = QSpinBox()
+        self.recently_closed_threshold.setRange(1, 365 * 20) # 20 years
+        self.recently_closed_threshold.setValue(self.settings.thresholds.recently_closed_days)
+        recent_layout.addRow("Show PRs closed within (days):", self.recently_closed_threshold)
 
         thresholds_layout.addWidget(recent_group)
 
@@ -309,7 +309,7 @@ class SettingsDialog(QDialog):
                 unit=self.age_danger_unit.currentText()
             )
             self.settings.thresholds.recently_closed_days = (
-                self.recent_threshold.value()
+                self.recently_closed_threshold.value()
             )
             self.settings.thresholds.time_to_merge.warning = TimeValue(
                 value=self.ttm_warning_value.value(),

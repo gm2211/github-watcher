@@ -297,6 +297,7 @@ class PullRequest:
     changed_files: Optional[int] = None
     additions: Optional[int] = None
     deletions: Optional[int] = None
+    commit_count: Optional[int] = None
     comment_count_by_author: Optional[Dict[str, int]] = None
     last_comment_time: Optional[datetime] = None
     last_comment_author: Optional[str] = None
@@ -328,6 +329,7 @@ class PullRequest:
             "changed_files": self.changed_files,
             "additions": self.additions,
             "deletions": self.deletions,
+            "commit_count": self.commit_count,
             "comment_count_by_author": self.comment_count_by_author,
             "last_comment_time": (
                 self.last_comment_time.isoformat() if self.last_comment_time else None
@@ -373,6 +375,7 @@ class PullRequest:
                 changed_files=pr_data.get("changed_files"),
                 additions=pr_data.get("additions"),
                 deletions=pr_data.get("deletions"),
+                commit_count=pr_data.get("commit_count"),
                 comment_count_by_author=pr_data.get("comment_count_by_author"),
                 last_comment_time=parse_datetime(pr_data.get("last_comment_time")),
                 last_comment_author=pr_data.get("last_comment_author"),

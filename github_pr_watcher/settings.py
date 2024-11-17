@@ -35,9 +35,9 @@ class TimeThreshold:
 
 @dataclass
 class Thresholds:
-    files: ThresholdPair = field(default_factory=lambda: ThresholdPair(10, 50))
-    additions: ThresholdPair = field(default_factory=lambda: ThresholdPair(500, 1000))
-    deletions: ThresholdPair = field(default_factory=lambda: ThresholdPair(500, 2000))
+    files: ThresholdPair = field(default_factory=lambda: ThresholdPair(15, 50))
+    additions: ThresholdPair = field(default_factory=lambda: ThresholdPair(700, 1_500))
+    deletions: ThresholdPair = field(default_factory=lambda: ThresholdPair(3000, 10_000))
     age: TimeThreshold = field(
         default_factory=lambda: TimeThreshold(
             warning=TimeValue(7, "days"),
@@ -51,13 +51,13 @@ class Thresholds:
             danger=TimeValue(5, "days")
         )
     )
-    recently_closed_days: int = 7
+    recently_closed_days: int = 90
 
 
 @dataclass
 class RefreshInterval:
-    value: int = 30
-    unit: str = "seconds"
+    value: int
+    unit: str
 
     def to_millis(self) -> int:
         if self.unit == "seconds":
@@ -71,7 +71,7 @@ class RefreshInterval:
 @dataclass
 class Settings:
     users: List[str] = field(default_factory=list)
-    refresh: RefreshInterval = field(default_factory=RefreshInterval)
+    refresh: RefreshInterval = field(default_factory=lambda: RefreshInterval(15, "minutes"))
     thresholds: Thresholds = field(default_factory=Thresholds)
     settings_path: str = field(default="")
 
@@ -92,7 +92,7 @@ class Settings:
             thresholds_data = data.get("thresholds", {})
             time_to_merge_data = thresholds_data.get("time_to_merge", {})
             age_data = thresholds_data.get("age", {})
-            
+
             # Create TimeThreshold objects
             time_to_merge = TimeThreshold(
                 warning=TimeValue(

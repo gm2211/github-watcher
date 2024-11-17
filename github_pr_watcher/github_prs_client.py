@@ -1,5 +1,5 @@
 import traceback
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import auto, Enum
@@ -45,7 +45,6 @@ class GitHubPRsClient:
         # Define section-specific queries
         self.section_queries = {
             PRSection.OPEN: PRQueryConfig(query="is:pr is:open"),
-            # TODO instead of comments:0 we should look at the last comment date
             PRSection.NEEDS_REVIEW: PRQueryConfig(
                 query="is:pr is:open review:none comments:0 -draft:true"
             ),
@@ -77,6 +76,9 @@ class GitHubPRsClient:
 
             prs_by_author_by_section = {}
             for section in sections_to_process:
+                if self._shutdown:  # Check for cancellation
+                    return {}
+                
                 query_config = self.section_queries[section]
                 prs_by_author_by_section[section] = self._fetch_prs_by_author(
                     users, query_config
@@ -259,6 +261,14 @@ class GitHubPRsClient:
                     else None
                 )
 
+            # Get commit count
+            commits_url = f"{self.base_url}/repos/{pr.repo_owner}/{pr.repo_name}/pulls/{pr.number}/commits"
+            commits_response = self._make_request('GET', commits_url)
+            if commits_response.status_code == 200:
+                pr.commit_count = len(commits_response.json())
+            else:
+                pr.commit_count = 0
+
             # Get comments and reviews
             comments_url = f"{self.base_url}/repos/{pr.repo_owner}/{pr.repo_name}/issues/{pr.number}/comments"
             reviews_url = f"{self.base_url}/repos/{pr.repo_owner}/{pr.repo_name}/pulls/{pr.number}/reviews"
@@ -347,7 +357,7 @@ class GitHubPRsClient:
                 ]
 
                 section_results = {}
-                for future in futures:
+                for future in as_completed(futures):
                     if self._shutdown:
                         break
                     user, user_prs = future.result()
@@ -360,7 +370,7 @@ class GitHubPRsClient:
 
                         # Update PRs with details as they complete
                         prs_with_details = []
-                        for detail_future in detail_futures:
+                        for detail_future in as_completed(detail_futures):
                             if self._shutdown:
                                 break
                             pr_with_details, partial = detail_future.result()
@@ -372,14 +382,13 @@ class GitHubPRsClient:
 
                 return section_results
 
-        except RuntimeError("cannot schedule new futures after shutdown"):
-            return {}
         except Exception as e:
             print(f"Error fetching section data: {e}")
             traceback.print_exc()
             return {}
 
-    @with_rate_limit_retry()
+    @with_rate_limit_retry(
+        max_retries=10, initial_failure_backoff_seconds=2, max_failure_backoff_seconds=10, backoff_multiplier=2)
     def _make_request(self, method: str, url: str, **kwargs) -> requests.Response:
         """Make a request to the GitHub API with rate limit handling"""
         return requests.request(method, url, headers=self.headers, **kwargs)

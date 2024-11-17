@@ -1,5 +1,5 @@
 import traceback
-from typing import Dict
+from typing import Dict, List
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QCloseEvent
@@ -41,9 +41,9 @@ class MainWindow(QMainWindow):
         self.auto_refresh_timer: QTimer | None = None
         self.setWindowTitle(f"GitHub PR Watcher - v{app_version}")
         self.setStyleSheet(Styles.MAIN_WINDOW)
-        self.workers = []
-        self.refresh_worker = None
-        self.is_refreshing = False
+        self.workers: List[RefreshWorker] = []
+        self.refresh_worker: RefreshWorker | None = None
+        self.is_refreshing: bool = False
         self.app = QApplication.instance()
 
         # Create central widget and main layout
@@ -154,12 +154,12 @@ class MainWindow(QMainWindow):
         stats_btn.setStyleSheet(Styles.BUTTON)
         buttons_layout.addWidget(stats_btn)
 
-        # Refresh button
-        refresh_btn = QPushButton("🔄 Refresh")
-        refresh_btn.clicked.connect(self.refresh_data)
-        refresh_btn.setFixedWidth(80)
-        refresh_btn.setStyleSheet(Styles.BUTTON)
-        buttons_layout.addWidget(refresh_btn)
+        # Refresh/Cancel button
+        self.refresh_btn = QPushButton("🔄 Refresh")
+        self.refresh_btn.clicked.connect(self.refresh_button_clicked)
+        self.refresh_btn.setFixedWidth(80)
+        self.refresh_btn.setStyleSheet(Styles.BUTTON)
+        buttons_layout.addWidget(self.refresh_btn)
 
         # Settings button
         settings_btn = QPushButton("⚙️ Settings")
@@ -331,11 +331,12 @@ class MainWindow(QMainWindow):
 
             self.is_refreshing = True
             self._show_loading_state()
+            self.refresh_btn.setText("❌ Cancel")  # Change button text
 
             self.refresh_worker = RefreshWorker(
                 self.github_prs_client,
                 users,
-                settings=self.settings,  # Pass settings to worker
+                settings=self.settings,
             )
             self.refresh_worker.finished.connect(self._handle_refresh_complete)
             self.refresh_worker.error.connect(self._handle_refresh_error)
@@ -391,10 +392,12 @@ class MainWindow(QMainWindow):
         finally:
             self._hide_loading_state()
             self.is_refreshing = False
+            self.refresh_btn.setText("🔄 Refresh")  # Reset button text
 
     def _handle_refresh_error(self, error_msg):
         """Handle refresh operation error"""
         self._hide_loading_state()
+        self.refresh_btn.setText("🔄 Refresh")  # Reset button text
         QMessageBox.critical(self, "Error", f"Failed to refresh data: {error_msg}")
         if self.refresh_worker in self.workers:
             self.workers.remove(self.refresh_worker)
@@ -431,11 +434,9 @@ class MainWindow(QMainWindow):
             if self.auto_refresh_timer:
                 self.auto_refresh_timer.stop()
 
-            # Cancel any ongoing workers
-            for worker in self.workers:
-                worker._shutdown = True
-                worker.quit()
-                worker.wait()
+            # Cancel any ongoing refresh
+            if self.is_refreshing:
+                self.cancel_refresh()
 
             # Clear workers list
             self.workers.clear()
@@ -448,3 +449,23 @@ class MainWindow(QMainWindow):
         finally:
             # Accept the close event
             event.accept()
+
+    def refresh_button_clicked(self):
+        """Handle refresh button clicks - either start refresh or cancel it"""
+        if self.is_refreshing:
+            self.cancel_refresh()
+        else:
+            self.refresh_data()
+
+    def cancel_refresh(self):
+        """Cancel the current refresh operation"""
+        if self.refresh_worker:
+            # Just set the shutdown flag and let the thread finish naturally
+            self.refresh_worker._shutdown = True
+            if self.refresh_worker in self.workers:
+                self.workers.remove(self.refresh_worker)
+            self.refresh_worker = None
+        
+        self.is_refreshing = False
+        self._hide_loading_state()
+        self.refresh_btn.setText("🔄 Refresh")

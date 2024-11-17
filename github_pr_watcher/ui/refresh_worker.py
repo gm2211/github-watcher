@@ -17,15 +17,24 @@ class RefreshWorker(QThread):
         self.users = users
         self.settings = settings
         self.section = section
+        self._shutdown = False
 
     def run(self):
         try:
+            # Check if already cancelled before starting
+            if self._shutdown:
+                return
+
             # Get PR data
             prs_by_author_by_section: Dict[
                 PRSection, Dict[str, List[Tuple[PullRequest, bool]]]
             ] = self.github_prs_client.get_pr_data(
                 self.users, self.section, settings=self.settings
             )
+
+            # Check if cancelled during execution
+            if self._shutdown:
+                return
 
             if prs_by_author_by_section is not None:
                 self.progress.emit("Completed refresh")
@@ -35,5 +44,11 @@ class RefreshWorker(QThread):
                 self.error.emit(error_msg)
 
         except Exception as e:
-            error_msg = f"Error refreshing data: {str(e)}"
-            self.error.emit(error_msg)
+            if not self._shutdown:  # Only emit error if not cancelled
+                error_msg = f"Error refreshing data: {str(e)}"
+                self.error.emit(error_msg)
+
+    def requestInterruption(self):
+        """Handle interruption request"""
+        self._shutdown = True
+        super().requestInterruption()

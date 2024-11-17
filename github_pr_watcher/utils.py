@@ -33,18 +33,20 @@ def flatten(list_of_lists: List[List[T]]) -> List[T]:
 
 
 def with_rate_limit_retry(
-        max_retries: int = 3,
-        initial_backoff: float = 1.0,
-        max_backoff: float = 60.0,
+        max_retries: int = 10,
+        initial_failure_backoff_seconds: float = 1.0,
+        max_failure_backoff_seconds: float = 60.0,
         backoff_multiplier: float = 2.0,
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
     Decorator to handle GitHub API rate limiting with exponential backoff.
+    We will use the time specified in the X-RateLimit-Reset header to wait before retrying.
+    If no time is specified or there's some other non-ratelimit failure, we will use exponential backoff.
 
     Args:
         max_retries: Maximum number of retry attempts
-        initial_backoff: Initial backoff time in seconds
-        max_backoff: Maximum backoff time in seconds
+        initial_failure_backoff_seconds: Initial backoff time in seconds
+        max_failure_backoff_seconds: Maximum backoff time in seconds
         backoff_multiplier: Multiplier for exponential backoff
     """
 
@@ -52,7 +54,7 @@ def with_rate_limit_retry(
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             retries = 0
-            backoff = initial_backoff
+            backoff = initial_failure_backoff_seconds
 
             while True:
                 try:
@@ -80,7 +82,7 @@ def with_rate_limit_retry(
                         raise
 
                     # Calculate backoff time
-                    wait_time = min(backoff, max_backoff)
+                    wait_time = min(backoff, max_failure_backoff_seconds)
                     print(f"Request failed: {e}. Retrying in {wait_time:.1f} seconds...")
                     time.sleep(wait_time)
 

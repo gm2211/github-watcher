@@ -1,5 +1,6 @@
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, List, Tuple, Any
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -19,10 +20,14 @@ from PyQt6.QtWidgets import (
     QTabWidget,
     QProgressBar,
     QFrame,
+    QSizePolicy,
 )
 
+from github_pr_watcher.objects import PullRequest
 from github_pr_watcher.settings import Settings
 from github_pr_watcher.ui.themes import Colors, Styles
+
+SECONDS_PER_DAY = 86400
 
 # Configure matplotlib
 plt.style.use('dark_background')
@@ -53,6 +58,40 @@ class StyledFrame(QFrame):
                 padding: 16px;
             }}
         """)
+
+
+@dataclass
+class UserStats:
+    """Statistics for a single user"""
+    created: int = 0
+    merged: int = 0
+    reviewed: int = 0
+    active: int = 0
+    total_lines_added: int = 0
+    total_commits: int = 0
+    total_prs: int = 0
+    total_merged_prs: int = 0
+    total_pr_age: timedelta = field(default_factory=lambda: timedelta())
+    total_time_to_merge: timedelta = field(default_factory=lambda: timedelta())
+    total_time_since_comment: timedelta = field(default_factory=lambda: timedelta())
+
+    def to_display_stats(self) -> Dict:
+        """Convert raw stats to display format"""
+        total_prs = max(1, self.total_prs)  # Avoid division by zero
+        total_merged = max(1, self.total_merged_prs)  # Avoid division by zero
+
+        return {
+            "created_per_week": self.created,
+            "merged_per_week": self.merged,
+            "reviewed_per_week": self.reviewed,
+            "active": self.active,
+            "avg_lines_added": round(self.total_lines_added / total_prs),
+            "avg_pr_age": round(self.total_pr_age.total_seconds() / (total_prs * SECONDS_PER_DAY), 1),
+            "avg_time_to_merge": round(self.total_time_to_merge.total_seconds() / (total_merged * SECONDS_PER_DAY), 1),
+            "avg_time_since_comment": round(
+                self.total_time_since_comment.total_seconds() / (total_prs * SECONDS_PER_DAY), 1),
+            "avg_commits": round(self.total_commits / total_prs, 1) if self.total_commits > 0 else 0,
+        }
 
 
 class StatsDialog(QDialog):
@@ -134,14 +173,23 @@ class StatsDialog(QDialog):
 
         layout.addWidget(period_frame)
 
-        # Initialize matplotlib components right away
-        self.figure = Figure(figsize=(12, 8))
+        # Initialize matplotlib components right away with dynamic sizing
+        self.figure = Figure()  # Remove fixed figsize
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.setStyleSheet(f"""
-            background-color: {Colors.BG_DARKER};
-            border: 1px solid {Colors.BORDER_DEFAULT};
-            border-radius: 8px;
+            QWidget {{
+                background-color: {Colors.BG_DARKER};
+                border: 1px solid {Colors.BORDER_DEFAULT};
+                border-radius: 8px;
+                min-height: 600px;  /* Ensure minimum height */
+            }}
         """)
+
+        # Set size policy to make canvas expand
+        self.canvas.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding
+        )
 
         # Create tab widget
         self.tab_widget = QTabWidget()
@@ -220,8 +268,8 @@ class StatsDialog(QDialog):
             ("Active PRs", int),
             ("Avg Lines Added", int),
             ("Avg PR Age (days)", float),
-            ("Avg Time to Merge (days)", float),
-            ("Avg Time Since Comment (days)", float),
+            ("Avg TTM (days)", float),
+            ("Avg TSLC (days)", float),
             ("Avg Commits", float)
         ]
         table.setColumnCount(len(self.columns))
@@ -239,24 +287,11 @@ class StatsDialog(QDialog):
     def _calculate_user_stats(self, days: int) -> List[Dict]:
         """Calculate user statistics - only for configured users"""
         cutoff_date = datetime.now().astimezone() - timedelta(days=days)
-        stats = {}
+        stats: Dict[str, UserStats] = {}
 
-        # Initialize stats for all configured users (and only configured users)
-        for user in sorted(set(self.settings.users)):  # Use set to remove duplicates
-            stats[user] = {
-                "created": 0,
-                "merged": 0,
-                "reviewed": 0,
-                "active": 0,
-                "total_lines_added": 0,
-                "total_commits": 0,
-                "total_prs": 0,
-                "total_merged_prs": 0,
-                "total_pr_age": timedelta(),
-                "total_time_to_merge": timedelta(),
-                "total_time_since_comment": timedelta(),
-                "weeks": days / 7,
-            }
+        # Initialize stats for all configured users
+        for user in sorted(set(self.settings.users)):
+            stats[user] = UserStats()
 
         now = datetime.now().astimezone()
 
@@ -266,80 +301,67 @@ class StatsDialog(QDialog):
             if not section_data:
                 continue
 
-            for user_prs in section_data.prs_by_author.values():
-                for pr in user_prs:
-                    # Skip if we've already processed this PR
-                    if pr.id in processed_prs:
-                        continue
-                    processed_prs.add(pr.id)
+            user_prs: list[PullRequest] = [pr for prs in section_data.prs_by_author.values() for pr in prs]
+            for pr in user_prs:
+                # Skip if we've already processed this PR
+                if pr.id in processed_prs:
+                    continue
+                processed_prs.add(pr.id)
 
-                    author = pr.user.login
-                    # Only process if author is in configured users
-                    if author in stats:  # Use stats dict keys instead of settings.users
-                        # Count created PRs
-                        if pr.created_at >= cutoff_date:
-                            stats[author]["created"] += 1
-                            stats[author]["total_prs"] += 1
-                            stats[author]["total_lines_added"] += (pr.additions or 0)
+                author = pr.user.login
+                # Only process if author is in configured users
+                if author in stats:
+                    user_stats = stats[author]
 
-                            # Calculate PR age
-                            if pr.merged_at:
-                                pr_age = pr.merged_at - pr.created_at
-                            else:
-                                pr_age = now - pr.created_at
-                            stats[author]["total_pr_age"] += pr_age
+                    # Count created PRs
+                    if pr.created_at >= cutoff_date:
+                        user_stats.created += 1
+                        user_stats.total_prs += 1
+                        user_stats.total_lines_added += (pr.additions or 0)
 
-                            # Calculate time since last comment if available
-                            if pr.last_comment_time:
-                                time_since_comment = now - pr.last_comment_time
-                                stats[author]["total_time_since_comment"] += time_since_comment
+                        # Calculate PR age
+                        if pr.merged_at:
+                            pr_age = pr.merged_at - pr.created_at
+                        else:
+                            pr_age = now - pr.created_at
+                        user_stats.total_pr_age += pr_age
 
-                        # Count merged PRs and calculate time to merge
-                        if pr.merged and pr.merged_at and pr.merged_at >= cutoff_date:
-                            stats[author]["merged"] += 1
-                            stats[author]["total_merged_prs"] += 1
-                            merge_time = pr.merged_at - pr.created_at
-                            stats[author]["total_time_to_merge"] += merge_time
+                        # Calculate time since last comment if available
+                        if pr.last_comment_time:
+                            time_since_comment = now - pr.last_comment_time
+                            user_stats.total_time_since_comment += time_since_comment
 
-                        # Count active PRs
-                        if pr.state.lower() == "open" and not pr.archived:
-                            stats[author]["active"] += 1
+                    # Count merged PRs and calculate time to merge
+                    if pr.merged and pr.merged_at and pr.merged_at >= cutoff_date:
+                        user_stats.merged += 1
+                        user_stats.total_merged_prs += 1
+                        merge_time = pr.merged_at - pr.created_at
+                        user_stats.total_time_to_merge += merge_time
 
-                    # Count reviews for all configured users
-                    for commenter, count in (pr.comment_count_by_author or {}).items():
-                        if commenter in stats and commenter != author:  # Use stats dict keys
-                            if pr.last_comment_time and pr.last_comment_time >= cutoff_date:
-                                stats[commenter]["reviewed"] += 1
+                    # Count active PRs
+                    if pr.state.lower() == "open" and not pr.archived:
+                        user_stats.active += 1
 
-        # Convert to list and calculate averages
+                    user_stats.total_commits += pr.commit_count
+
+                # Count reviews for all configured users
+                for commenter, count in (pr.comment_count_by_author or {}).items():
+                    if commenter in stats and commenter != author:
+                        if pr.last_comment_time and pr.last_comment_time >= cutoff_date:
+                            stats[commenter].reviewed += 1
+
+        # Convert to list and calculate display stats
         result = []
         for user, user_stats in stats.items():
-            weeks = max(1, user_stats["weeks"])  # Avoid division by zero
-            total_prs = max(1, user_stats["total_prs"])  # Avoid division by zero
-            total_merged = max(1, user_stats["total_merged_prs"])  # Avoid division by zero
+            display_stats = user_stats.to_display_stats()
+            display_stats["user"] = user  # Add username to stats
+            result.append(display_stats)
 
-            result.append({
-                "user": user,
-                "created_per_week": round(user_stats["created"] / weeks, 1),
-                "merged_per_week": round(user_stats["merged"] / weeks, 1),
-                "reviewed_per_week": round(user_stats["reviewed"] / weeks, 1),
-                "active": user_stats["active"],
-                "avg_lines_added": round(user_stats["total_lines_added"] / total_prs),
-                "avg_pr_age": round(user_stats["total_pr_age"].total_seconds() / (total_prs * 86400), 1),
-                # Convert to days
-                "avg_time_to_merge": round(user_stats["total_time_to_merge"].total_seconds() / (total_merged * 86400),
-                                           1),  # Convert to days
-                "avg_time_since_comment": round(
-                    user_stats["total_time_since_comment"].total_seconds() / (total_prs * 86400), 1),  # Convert to days
-                "avg_commits": round(user_stats["total_commits"] / total_prs, 1) if user_stats[
-                                                                                        "total_commits"] > 0 else 0,
-            })
-
-        # Sort by PRs created per week
+        # Sort by total PRs created
         result.sort(key=lambda x: x["created_per_week"], reverse=True)
         return result
 
-    def _calculate_review_heatmap(self, days: int) -> (np.ndarray, List[str], List[str]):
+    def _calculate_review_heatmap(self, days: int) -> Tuple[np.ndarray, List[str], List[str]]:
         """Calculate review frequency between authors and reviewers"""
         cutoff_date = datetime.now().astimezone() - timedelta(days=days)
         review_counts = {}  # author -> reviewer -> count
@@ -402,8 +424,9 @@ class StatsDialog(QDialog):
             self.canvas.draw()
             return
 
+        # Create custom colormap with blue gradients
         colors = [
-            "#607d8b",
+            "#607d8b",  # Start with a muted blue-gray
             "#5a7788",
             "#547284",
             "#4f6c81",
@@ -417,12 +440,12 @@ class StatsDialog(QDialog):
             "#304063",
             "#2d3a5f",
             "#2b355a",
-            "#292f56"
+            "#292f56"  # End with a deep blue
         ]
         custom_cmap = sns.color_palette(colors, as_cmap=True)
 
         # Create heatmap with improved styling
-        heatmap = sns.heatmap(
+        sns.heatmap(
             matrix,
             ax=ax,
             xticklabels=authors,
@@ -449,19 +472,6 @@ class StatsDialog(QDialog):
             linewidths=0.5,  # Add thin grid lines
             linecolor=Colors.BORDER_DEFAULT,  # Use theme border color
         )
-
-        # Try to add rounded corners to cells
-        try:
-            patches = ax.patches
-            if patches:  # Only proceed if there are patches
-                for i in range(len(reviewers)):
-                    for j in range(len(authors)):
-                        idx = i * len(authors) + j
-                        if idx < len(patches) and not matrix[i, j] == 0:
-                            patch = patches[idx]
-                            patch.set_radius(0.15)  # Adjust radius for roundness
-        except Exception as e:
-            print(f"Warning: Could not add rounded corners to heatmap cells: {e}")
 
         # Customize appearance
         ax.set_title('Review Frequency Matrix',
@@ -580,3 +590,22 @@ class StatsDialog(QDialog):
         except Exception as e:
             print(f"Error initializing heatmap: {e}")
             self.heatmap_loading.setText("Error loading visualization")
+
+    def closeEvent(self, event):
+        """Handle dialog close event"""
+        try:
+            # Close the matplotlib figure to free up resources
+            plt.close(self.figure)
+
+            # Clear any matplotlib state
+            plt.clf()
+
+            # Delete the canvas explicitly
+            if self.canvas:
+                self.canvas.deleteLater()
+
+        except Exception as e:
+            print(f"Error during stats dialog cleanup: {e}")
+        finally:
+            # Accept the close event
+            event.accept()

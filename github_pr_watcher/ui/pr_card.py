@@ -279,6 +279,14 @@ def create_pr_card(pr: PullRequest, settings, parent=None) -> QFrame:
         changes_badge = create_changes_badge(additions, deletions, settings)
         bottom_layout.addWidget(changes_badge)
 
+    # Commit count badge
+    commit_count = pr.commit_count or 0
+    if commit_count > 0:
+        commit_badge = create_badge(
+            f"{commit_count} commits", "#007bff", opacity=0.5
+        )
+        bottom_layout.addWidget(commit_badge)
+
     # Comment count badge
     comment_count_badge = create_badge(
         f"{sum(pr.comment_count_by_author.values())} comments", "#007bff", opacity=0.5
