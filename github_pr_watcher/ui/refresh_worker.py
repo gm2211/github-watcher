@@ -50,5 +50,8 @@ class RefreshWorker(QThread):
 
     def requestInterruption(self):
         """Handle interruption request"""
-        self._shutdown = True
+        self.shutdown()
         super().requestInterruption()
+
+    def shutdown(self):
+        self._shutdown = True

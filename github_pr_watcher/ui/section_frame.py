@@ -1,4 +1,5 @@
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime, timedelta
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -14,6 +15,7 @@ from PyQt6.QtWidgets import (
 
 from github_pr_watcher.ui.themes import Colors, Styles
 from github_pr_watcher.ui.ui_state import SectionName, UIState
+from github_pr_watcher.ui.filters import PullRequest
 
 
 class SectionFrame(QFrame):
@@ -140,3 +142,44 @@ class SectionFrame(QFrame):
     def is_expanded(self):
         return self.ui_state.get_section_expanded(self.name)
         pass
+
+    def add_separator(self, text: str) -> None:
+        """Add a styled separator with text"""
+
+        label = QLabel(text)
+        label.setStyleSheet(f"""
+            color: {Colors.TEXT_SECONDARY};
+            font-size: 18px;
+            font-weight: bold;
+        """)
+
+        self.content_layout.addWidget(label)
+
+    def add_prs_with_this_week_separator(self, prs: List[PullRequest], card_creator) -> None:
+        """Add PRs with a separator between recent and older PRs"""
+        if not prs:
+            return
+
+        one_week_ago = datetime.now().astimezone() - timedelta(days=7)
+        recent_prs = []
+        older_prs = []
+
+        for pr in prs:
+            if pr.closed_at and pr.closed_at >= one_week_ago:
+                recent_prs.append(pr)
+            else:
+                older_prs.append(pr)
+
+        # Add recent PRs
+        if recent_prs:
+            self.add_separator("This Week")
+            for pr in recent_prs:
+                card = card_creator(pr)
+                self.content_layout.addWidget(card)
+
+        # Add older PRs
+        if older_prs:
+            self.add_separator("Older")
+            for pr in older_prs:
+                card = card_creator(pr)
+                self.content_layout.addWidget(card)

@@ -63,9 +63,10 @@ class StyledFrame(QFrame):
 @dataclass
 class UserStats:
     """Statistics for a single user"""
+    user: str = ""
     created: int = 0
     merged: int = 0
-    reviewed: int = 0
+    commented: int = 0
     active: int = 0
     total_lines_added: int = 0
     total_commits: int = 0
@@ -81,9 +82,10 @@ class UserStats:
         total_merged = max(1, self.total_merged_prs)  # Avoid division by zero
 
         return {
+            "user": self.user,
             "created_per_week": self.created,
             "merged_per_week": self.merged,
-            "reviewed_per_week": self.reviewed,
+            "commented_per_week": self.commented,
             "active": self.active,
             "avg_lines_added": round(self.total_lines_added / total_prs),
             "avg_pr_age": round(self.total_pr_age.total_seconds() / (total_prs * SECONDS_PER_DAY), 1),
@@ -207,7 +209,7 @@ class StatsDialog(QDialog):
         self.heatmap_layout = QVBoxLayout(heatmap_tab)
         self.heatmap_layout.setContentsMargins(0, 16, 0, 0)
         self.heatmap_layout.addWidget(self.canvas)
-        self.tab_widget.addTab(heatmap_tab, "Review Heatmap")
+        self.tab_widget.addTab(heatmap_tab, "comment Heatmap")
 
         layout.addWidget(self.tab_widget)
 
@@ -264,7 +266,7 @@ class StatsDialog(QDialog):
             ("User", str),
             ("PRs Created", float),
             ("PRs Merged", float),
-            ("PRs Reviewed", float),
+            ("PRs commented", float),
             ("Active PRs", int),
             ("Avg Lines Added", int),
             ("Avg PR Age (days)", float),
@@ -284,14 +286,14 @@ class StatsDialog(QDialog):
 
         return table
 
-    def _calculate_user_stats(self, days: int) -> List[Dict]:
+    def _calculate_user_stats(self, selected_period_days: int) -> List[UserStats]:
         """Calculate user statistics - only for configured users"""
-        cutoff_date = datetime.now().astimezone() - timedelta(days=days)
-        stats: Dict[str, UserStats] = {}
+        cutoff_date = datetime.now().astimezone() - timedelta(days=selected_period_days)
+        stats_by_user: Dict[str, UserStats] = {}
 
         # Initialize stats for all configured users
         for user in sorted(set(self.settings.users)):
-            stats[user] = UserStats()
+            stats_by_user[user] = UserStats(user=user)
 
         now = datetime.now().astimezone()
 
@@ -308,10 +310,10 @@ class StatsDialog(QDialog):
                     continue
                 processed_prs.add(pr.id)
 
-                author = pr.user.login
+                pr_author = pr.user.login
                 # Only process if author is in configured users
-                if author in stats:
-                    user_stats = stats[author]
+                if pr_author in stats_by_user:
+                    user_stats = stats_by_user[pr_author]
 
                     # Count created PRs
                     if pr.created_at >= cutoff_date:
@@ -344,34 +346,28 @@ class StatsDialog(QDialog):
 
                     user_stats.total_commits += pr.commit_count
 
-                # Count reviews for all configured users
+                # Count comments for all configured users
                 for commenter, count in (pr.comment_count_by_author or {}).items():
-                    if commenter in stats and commenter != author:
+                    if commenter in stats_by_user and commenter != pr_author:
                         if pr.last_comment_time and pr.last_comment_time >= cutoff_date:
-                            stats[commenter].reviewed += 1
+                            stats_by_user[commenter].commented += 1
 
-        # Convert to list and calculate display stats
-        result = []
-        for user, user_stats in stats.items():
-            display_stats = user_stats.to_display_stats()
-            display_stats["user"] = user  # Add username to stats
-            result.append(display_stats)
-
-        # Sort by total PRs created
-        result.sort(key=lambda x: x["created_per_week"], reverse=True)
+        # Convert to list and sort by total PRs created
+        result = list(stats_by_user.values())
+        result.sort(key=lambda x: x.created, reverse=True)
         return result
 
-    def _calculate_review_heatmap(self, days: int) -> Tuple[np.ndarray, List[str], List[str]]:
-        """Calculate review frequency between authors and reviewers"""
-        cutoff_date = datetime.now().astimezone() - timedelta(days=days)
-        review_counts = {}  # author -> reviewer -> count
-        all_reviewers = set()  # Track all users who have reviewed
+    def _calculate_comment_heatmap(self, selected_period_days: int) -> Tuple[np.ndarray, List[str], List[str]]:
+        """Calculate comment frequency between authors and commenters"""
+        cutoff_date = datetime.now().astimezone() - timedelta(days=selected_period_days)
+        comment_counts = {}  # author -> commenter -> count
+        all_commenters = set()  # Track all users who have commented
 
-        # First pass: collect all reviewers and initialize counts for configured users
+        # First pass: collect all commenters and initialize counts for configured users
         for user in self.settings.users:
-            review_counts[user] = {}
+            comment_counts[user] = {}
 
-        # Process PRs to build review counts
+        # Process PRs to build comment counts
         for section_data in self.ui_state.data_by_section.values():
             if not section_data:
                 continue
@@ -385,27 +381,27 @@ class StatsDialog(QDialog):
                     if pr.created_at < cutoff_date:
                         continue
 
-                    # Count reviews (using comments as a proxy)
-                    for reviewer, count in (pr.comment_count_by_author or {}).items():
-                        if reviewer != pr.user.login:  # Don't count self-reviews
-                            all_reviewers.add(reviewer)
-                            review_counts[pr.user.login][reviewer] = (
-                                    review_counts[pr.user.login].get(reviewer, 0) + count
+                    # Count comments (using comments as a proxy)
+                    for commenter, count in (pr.comment_count_by_author or {}).items():
+                        if commenter != pr.user.login:  # Don't count self-comments
+                            all_commenters.add(commenter)
+                            comment_counts[pr.user.login][commenter] = (
+                                    comment_counts[pr.user.login].get(commenter, 0) + count
                             )
 
         # Convert to numpy array for heatmap
         authors = sorted(self.settings.users)  # Only configured users as authors
-        reviewers = sorted(all_reviewers)  # All reviewers
-        matrix = np.zeros((len(reviewers), len(authors)))
+        commenters = sorted(all_commenters)  # All commenters
+        matrix = np.zeros((len(commenters), len(authors)))
 
         for i, author in enumerate(authors):
-            for j, reviewer in enumerate(reviewers):
-                if author != reviewer:  # Skip self-reviews
-                    matrix[j, i] = review_counts[author].get(reviewer, 0)
+            for j, commenter in enumerate(commenters):
+                if author != commenter:  # Skip self-comments
+                    matrix[j, i] = comment_counts[author].get(commenter, 0)
 
-        return matrix, authors, reviewers
+        return matrix, authors, commenters
 
-    def _update_heatmap(self, matrix: np.ndarray, authors: List[str], reviewers: List[str]):
+    def _update_heatmap(self, matrix: np.ndarray, authors: List[str], commenters: List[str]):
         """Update the heatmap visualization using seaborn"""
         import seaborn as sns
         self.figure.clear()
@@ -414,7 +410,7 @@ class StatsDialog(QDialog):
         ax = self.figure.add_subplot(111)
 
         # Handle empty data
-        if len(authors) == 0 or len(reviewers) == 0:
+        if len(authors) == 0 or len(commenters) == 0:
             ax.text(0.5, 0.5, 'No data available',
                     horizontalalignment='center',
                     verticalalignment='center',
@@ -449,12 +445,12 @@ class StatsDialog(QDialog):
             matrix,
             ax=ax,
             xticklabels=authors,
-            yticklabels=reviewers,
+            yticklabels=commenters,
             cmap=custom_cmap,
             annot=True,
             fmt='g',
             cbar_kws={
-                'label': 'Number of Reviews',
+                'label': 'Number of comments',
                 'orientation': 'horizontal',
                 'pad': 0.2,
                 'shrink': 0.8,
@@ -474,13 +470,13 @@ class StatsDialog(QDialog):
         )
 
         # Customize appearance
-        ax.set_title('Review Frequency Matrix',
+        ax.set_title('comment Frequency Matrix',
                      color=Colors.TEXT_PRIMARY,
                      pad=20,
                      fontsize=16,
                      fontweight='bold')
         ax.set_xlabel('Author', color=Colors.TEXT_PRIMARY, labelpad=15)
-        ax.set_ylabel('Reviewer', color=Colors.TEXT_PRIMARY, labelpad=15)
+        ax.set_ylabel('commenter', color=Colors.TEXT_PRIMARY, labelpad=15)
 
         # Style the ticks
         ax.tick_params(colors=Colors.TEXT_PRIMARY, which='both', length=0)
@@ -512,24 +508,25 @@ class StatsDialog(QDialog):
             return 90
 
     def update_stats(self):
-        days = self._get_period_days()
+        selected_period_days = self._get_period_days()
 
         # Update summary table (only configured users)
-        stats = self._calculate_user_stats(days)
+        stats = self._calculate_user_stats(selected_period_days)
         self.table.setRowCount(len(stats))
 
         for row, user_stats in enumerate(stats):
+            display_stats = user_stats.to_display_stats()
             columns = [
-                (user_stats["user"], Qt.AlignmentFlag.AlignLeft),
-                (user_stats["created_per_week"], Qt.AlignmentFlag.AlignCenter),
-                (user_stats["merged_per_week"], Qt.AlignmentFlag.AlignCenter),
-                (user_stats["reviewed_per_week"], Qt.AlignmentFlag.AlignCenter),
-                (user_stats["active"], Qt.AlignmentFlag.AlignCenter),
-                (user_stats["avg_lines_added"], Qt.AlignmentFlag.AlignCenter),
-                (user_stats["avg_pr_age"], Qt.AlignmentFlag.AlignCenter),
-                (user_stats["avg_time_to_merge"], Qt.AlignmentFlag.AlignCenter),
-                (user_stats["avg_time_since_comment"], Qt.AlignmentFlag.AlignCenter),
-                (user_stats["avg_commits"], Qt.AlignmentFlag.AlignCenter),
+                (user_stats.user, Qt.AlignmentFlag.AlignLeft),
+                (display_stats["created_per_week"], Qt.AlignmentFlag.AlignCenter),
+                (display_stats["merged_per_week"], Qt.AlignmentFlag.AlignCenter),
+                (display_stats["commented_per_week"], Qt.AlignmentFlag.AlignCenter),
+                (display_stats["active"], Qt.AlignmentFlag.AlignCenter),
+                (display_stats["avg_lines_added"], Qt.AlignmentFlag.AlignCenter),
+                (display_stats["avg_pr_age"], Qt.AlignmentFlag.AlignCenter),
+                (display_stats["avg_time_to_merge"], Qt.AlignmentFlag.AlignCenter),
+                (display_stats["avg_time_since_comment"], Qt.AlignmentFlag.AlignCenter),
+                (display_stats["avg_commits"], Qt.AlignmentFlag.AlignCenter),
             ]
 
             for col, (value, alignment) in enumerate(columns):
@@ -544,9 +541,9 @@ class StatsDialog(QDialog):
                 item.setTextAlignment(alignment | Qt.AlignmentFlag.AlignVCenter)
                 self.table.setItem(row, col, item)
 
-        # Update heatmap (all reviewers)
-        matrix, authors, reviewers = self._calculate_review_heatmap(days)
-        self._update_heatmap(matrix, authors, reviewers)
+        # Update heatmap (all commenters)
+        matrix, authors, commenters = self._calculate_comment_heatmap(selected_period_days)
+        self._update_heatmap(matrix, authors, commenters)
 
         # Sort by PRs Created column by default (descending)
         self.table.sortItems(1, Qt.SortOrder.DescendingOrder)
@@ -579,7 +576,6 @@ class StatsDialog(QDialog):
             """)
 
             # Remove loading message and add canvas
-            self.heatmap_loading.deleteLater()
             self.heatmap_layout.addWidget(self.canvas)
 
             self.heatmap_initialized = True
@@ -589,7 +585,6 @@ class StatsDialog(QDialog):
 
         except Exception as e:
             print(f"Error initializing heatmap: {e}")
-            self.heatmap_loading.setText("Error loading visualization")
 
     def closeEvent(self, event):
         """Handle dialog close event"""

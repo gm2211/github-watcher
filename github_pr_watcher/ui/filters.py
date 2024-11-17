@@ -1,6 +1,7 @@
 import traceback
 from dataclasses import dataclass, field
 from typing import Dict, Set
+from datetime import datetime
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QLineEdit, QWidget
@@ -218,8 +219,16 @@ class FiltersBar(QWidget):
 
             if filtered_user_prs:
                 if self.filter_state.group_by_user:
+                    # Sort PRs by closed_at date if they're in the Recently Closed section
+                    if any(pr.closed_at for pr in filtered_user_prs):
+                        filtered_user_prs.sort(key=lambda x: x.closed_at or datetime.min, reverse=True)
                     filtered_prs[user] = filtered_user_prs
                 else:
                     filtered_prs.setdefault("all", []).extend(filtered_user_prs)
+
+        # If not grouped by user, sort the combined list by closed_at date
+        if not self.filter_state.group_by_user and "all" in filtered_prs:
+            if any(pr.closed_at for pr in filtered_prs["all"]):
+                filtered_prs["all"].sort(key=lambda x: x.closed_at or datetime.min, reverse=True)
 
         return filtered_prs

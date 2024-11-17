@@ -283,10 +283,13 @@ class MainWindow(QMainWindow):
                         frame.content_layout.addWidget(user_header)
 
                         # Add PR cards for this user
-                        for pr in user_prs:
-                            card = create_pr_card(pr, self.settings)
-                            frame.content_layout.addWidget(card)
-                            total_prs += 1
+                        if frame.name == SectionName.RECENTLY_CLOSED:
+                            frame.add_prs_with_this_week_separator(user_prs, lambda pr: create_pr_card(pr, self.settings))
+                        else:
+                            for pr in user_prs:
+                                card = create_pr_card(pr, self.settings)
+                                frame.content_layout.addWidget(card)
+                            total_prs += len(user_prs)
 
                         # Add spacing between user sections
                         spacer = QWidget()
@@ -296,10 +299,13 @@ class MainWindow(QMainWindow):
                 else:
                     # Flat visualization (no grouping)
                     all_prs = filtered_prs.get("all", [])
-                    for pr in all_prs:
-                        card = create_pr_card(pr, self.settings)
-                        frame.content_layout.addWidget(card)
-                        total_prs += 1
+                    if frame.name == SectionName.RECENTLY_CLOSED:
+                        frame.add_prs_with_this_week_separator(all_prs, lambda pr: create_pr_card(pr, self.settings))
+                    else:
+                        for pr in all_prs:
+                            card = create_pr_card(pr, self.settings)
+                            frame.content_layout.addWidget(card)
+                    total_prs += len(all_prs)
 
                 # Add stretch at the end
                 frame.content_layout.addStretch()
@@ -331,7 +337,7 @@ class MainWindow(QMainWindow):
 
             self.is_refreshing = True
             self._show_loading_state()
-            self.refresh_btn.setText("❌ Cancel")  # Change button text
+            self.refresh_btn.setText("❌ Cancel")
 
             self.refresh_worker = RefreshWorker(
                 self.github_prs_client,
@@ -461,7 +467,7 @@ class MainWindow(QMainWindow):
         """Cancel the current refresh operation"""
         if self.refresh_worker:
             # Just set the shutdown flag and let the thread finish naturally
-            self.refresh_worker._shutdown = True
+            self.refresh_worker.shutdown()
             if self.refresh_worker in self.workers:
                 self.workers.remove(self.refresh_worker)
             self.refresh_worker = None
