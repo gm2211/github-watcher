@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Dict, List, Set
+from typing import Dict, List
 
 import numpy as np
 import seaborn as sns
@@ -184,55 +184,57 @@ class StatsDialog(QDialog):
     def _create_summary_table(self) -> QTableWidget:
         """Create the summary statistics table"""
         table = QTableWidget()
-        table.setStyleSheet(self._get_table_style())
-        
-        # Set up columns
-        table.setColumnCount(5)
-        table.setHorizontalHeaderLabels([
-            "User",
-            "PRs Created",
-            "PRs Merged",
-            "PRs Reviewed",
-            "Active PRs"
-        ])
-        
-        # Set column stretch behavior
-        header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        
-        # Set minimum width for the user column
-        table.setColumnWidth(0, 150)
-        
-        return table
-
-    def _get_table_style(self) -> str:
-        """Get common table style"""
-        return """
-            QTableWidget {
-                background-color: transparent;
+        table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: #1c2128;
                 gridline-color: #373e47;
                 border: 1px solid #373e47;
                 border-radius: 6px;
-            }
-            QTableWidget::item {
-                background-color: transparent;
+            }}
+            QTableWidget::item {{
+                background-color: #1c2128;
                 padding: 5px;
                 border: none;
-            }
-            QHeaderView::section {
-                background-color: #1c2128;
-                background-color: transparent;
-                color: #e6edf3;
+            }}
+            QHeaderView::section {{
+                background-color: {Colors.BG_DARKER};
                 padding: 5px;
                 border: none;
                 border-right: 1px solid #373e47;
                 border-bottom: 1px solid #373e47;
-            }
-        """
+            }}
+            QHeaderView::section:hover {{
+                background-color: {Colors.BG_LIGHT};
+                cursor: pointer;
+            }}
+        """)
+        table.verticalHeader().setVisible(False)
+        table.setSortingEnabled(True)  # Enable sorting
+
+        # Set up columns
+        self.columns = [
+            ("User", str),
+            ("PRs Created", float),
+            ("PRs Merged", float),
+            ("PRs Reviewed", float),
+            ("Active PRs", int),
+            ("Avg Lines Added", int),
+            ("Avg PR Age (days)", float),
+            ("Avg Time to Merge (days)", float),
+            ("Avg Time Since Comment (days)", float),
+            ("Avg Commits", float)
+        ]
+        table.setColumnCount(len(self.columns))
+        table.setHorizontalHeaderLabels([col[0] for col in self.columns])
+        
+        # Set column stretch behavior
+        table.horizontalHeader().setStyleSheet("background-color: transparent;")
+
+        # All columns get equal stretch
+        for i in range(len(self.columns)):
+            table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+        
+        return table
 
     def _calculate_user_stats(self, days: int) -> List[Dict]:
         """Calculate user statistics - only for configured users"""
@@ -246,8 +248,17 @@ class StatsDialog(QDialog):
                 "merged": 0,
                 "reviewed": 0,
                 "active": 0,
+                "total_lines_added": 0,
+                "total_commits": 0,
+                "total_prs": 0,
+                "total_merged_prs": 0,
+                "total_pr_age": timedelta(),
+                "total_time_to_merge": timedelta(),
+                "total_time_since_comment": timedelta(),
                 "weeks": days / 7,
             }
+        
+        now = datetime.now().astimezone()
         
         # Process each section's PRs
         for section_data in self.ui_state.data_by_section.values():
@@ -263,10 +274,27 @@ class StatsDialog(QDialog):
                         # Count created PRs
                         if pr.created_at >= cutoff_date:
                             stats[author]["created"] += 1
+                            stats[author]["total_prs"] += 1
+                            stats[author]["total_lines_added"] += (pr.additions or 0)
+                            
+                            # Calculate PR age
+                            if pr.merged_at:
+                                pr_age = pr.merged_at - pr.created_at
+                            else:
+                                pr_age = now - pr.created_at
+                            stats[author]["total_pr_age"] += pr_age
+                            
+                            # Calculate time since last comment if available
+                            if pr.last_comment_time:
+                                time_since_comment = now - pr.last_comment_time
+                                stats[author]["total_time_since_comment"] += time_since_comment
                         
-                        # Count merged PRs
+                        # Count merged PRs and calculate time to merge
                         if pr.merged and pr.merged_at and pr.merged_at >= cutoff_date:
                             stats[author]["merged"] += 1
+                            stats[author]["total_merged_prs"] += 1
+                            merge_time = pr.merged_at - pr.created_at
+                            stats[author]["total_time_to_merge"] += merge_time
                         
                         # Count active PRs
                         if pr.state.lower() == "open" and not pr.archived:
@@ -278,16 +306,24 @@ class StatsDialog(QDialog):
                             if pr.last_comment_time and pr.last_comment_time >= cutoff_date:
                                 stats[commenter]["reviewed"] += 1
 
-        # Convert to list and calculate per-week averages
+        # Convert to list and calculate averages
         result = []
         for user, user_stats in stats.items():
             weeks = max(1, user_stats["weeks"])  # Avoid division by zero
+            total_prs = max(1, user_stats["total_prs"])  # Avoid division by zero
+            total_merged = max(1, user_stats["total_merged_prs"])  # Avoid division by zero
+            
             result.append({
                 "user": user,
                 "created_per_week": round(user_stats["created"] / weeks, 1),
                 "merged_per_week": round(user_stats["merged"] / weeks, 1),
                 "reviewed_per_week": round(user_stats["reviewed"] / weeks, 1),
                 "active": user_stats["active"],
+                "avg_lines_added": round(user_stats["total_lines_added"] / total_prs),
+                "avg_pr_age": round(user_stats["total_pr_age"].total_seconds() / (total_prs * 86400), 1),  # Convert to days
+                "avg_time_to_merge": round(user_stats["total_time_to_merge"].total_seconds() / (total_merged * 86400), 1),  # Convert to days
+                "avg_time_since_comment": round(user_stats["total_time_since_comment"].total_seconds() / (total_prs * 86400), 1),  # Convert to days
+                "avg_commits": round(user_stats["total_commits"] / total_prs, 1) if user_stats["total_commits"] > 0 else 0,
             })
         
         # Sort by PRs created per week
@@ -463,34 +499,37 @@ class StatsDialog(QDialog):
         self.table.setRowCount(len(stats))
         
         for row, user_stats in enumerate(stats):
-            # User
-            user_item = QTableWidgetItem(user_stats["user"])
-            user_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row, 0, user_item)
+            columns = [
+                (user_stats["user"], Qt.AlignmentFlag.AlignLeft),
+                (user_stats["created_per_week"], Qt.AlignmentFlag.AlignCenter),
+                (user_stats["merged_per_week"], Qt.AlignmentFlag.AlignCenter),
+                (user_stats["reviewed_per_week"], Qt.AlignmentFlag.AlignCenter),
+                (user_stats["active"], Qt.AlignmentFlag.AlignCenter),
+                (user_stats["avg_lines_added"], Qt.AlignmentFlag.AlignCenter),
+                (user_stats["avg_pr_age"], Qt.AlignmentFlag.AlignCenter),
+                (user_stats["avg_time_to_merge"], Qt.AlignmentFlag.AlignCenter),
+                (user_stats["avg_time_since_comment"], Qt.AlignmentFlag.AlignCenter),
+                (user_stats["avg_commits"], Qt.AlignmentFlag.AlignCenter),
+            ]
             
-            # PRs Created/Week
-            created_item = QTableWidgetItem(str(user_stats["created_per_week"]))
-            created_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table.setItem(row, 1, created_item)
-            
-            # PRs Merged/Week
-            merged_item = QTableWidgetItem(str(user_stats["merged_per_week"]))
-            merged_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table.setItem(row, 2, merged_item)
-            
-            # PRs Reviewed/Week
-            reviewed_item = QTableWidgetItem(str(user_stats["reviewed_per_week"]))
-            reviewed_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table.setItem(row, 3, reviewed_item)
-            
-            # Active PRs
-            active_item = QTableWidgetItem(str(user_stats["active"]))
-            active_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table.setItem(row, 4, active_item)
+            for col, (value, alignment) in enumerate(columns):
+                item = QTableWidgetItem()
+                # Store the actual value for sorting
+                item.setData(Qt.ItemDataRole.UserRole, value)
+                # Display formatted value
+                if isinstance(value, (int, float)):
+                    item.setText(f"{value:.1f}" if isinstance(value, float) else str(value))
+                else:
+                    item.setText(str(value))
+                item.setTextAlignment(alignment | Qt.AlignmentFlag.AlignVCenter)
+                self.table.setItem(row, col, item)
         
         # Update heatmap (all reviewers)
         matrix, authors, reviewers = self._calculate_review_heatmap(days)
         self._update_heatmap(matrix, authors, reviewers)
+        
+        # Sort by PRs Created column by default (descending)
+        self.table.sortItems(1, Qt.SortOrder.DescendingOrder)
         
         # Adjust column widths
         self.table.resizeColumnsToContents() 
