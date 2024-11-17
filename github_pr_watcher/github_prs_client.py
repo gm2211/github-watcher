@@ -46,7 +46,7 @@ class GitHubPRsClient:
         self.section_queries = {
             PRSection.OPEN: PRQueryConfig(query="is:pr is:open"),
             PRSection.NEEDS_REVIEW: PRQueryConfig(
-                query="is:pr is:open review:none comments:0 -draft:true"
+                query="is:pr is:open -draft:true"
             ),
             PRSection.CHANGED_REQUESTED: PRQueryConfig(
                 query="is:pr is:open review:changes_requested -draft:true"
@@ -286,14 +286,20 @@ class GitHubPRsClient:
 
             # Process comments
             comment_count_by_author = {}
+            non_bot_comment_count = 0
             last_comment_time = None
             last_comment_author = None
 
             for comment in sorted(comments, key=lambda x: x["created_at"]):
                 author = comment["user"]["login"]
+                is_bot = comment["user"].get("type", "").lower() == "bot"
+                
                 comment_count_by_author[author] = (
                         comment_count_by_author.get(author, 0) + 1
                 )
+
+                if not is_bot:
+                    non_bot_comment_count += 1
 
                 comment_time = parse_datetime(comment["created_at"])
                 if last_comment_time is None or comment_time > last_comment_time:
@@ -320,6 +326,7 @@ class GitHubPRsClient:
 
             # Add new attributes to PR
             pr.comment_count_by_author = comment_count_by_author
+            pr.non_bot_comment_count = non_bot_comment_count
             pr.last_comment_time = last_comment_time
             pr.last_comment_author = last_comment_author
             pr.approved_by = list(approved_by)
@@ -334,6 +341,7 @@ class GitHubPRsClient:
             traceback.print_exc()
             # Set default values on error
             pr.comment_count_by_author = {}
+            pr.non_bot_comment_count = 0
             pr.last_comment_time = None
             pr.last_comment_author = None
             pr.approved_by = []
@@ -374,7 +382,12 @@ class GitHubPRsClient:
                             if self._shutdown:
                                 break
                             pr_with_details, partial = detail_future.result()
-                            if pr_with_details:
+                            
+                            # For needs review section, only include PRs with no non-bot comments
+                            if query_config == self.section_queries[PRSection.NEEDS_REVIEW]:
+                                if pr_with_details.non_bot_comment_count == 0:
+                                    prs_with_details.append((pr_with_details, partial))
+                            else:
                                 prs_with_details.append((pr_with_details, partial))
 
                         if prs_with_details:  # Only add if we have PRs

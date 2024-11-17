@@ -209,7 +209,7 @@ class StatsDialog(QDialog):
         self.heatmap_layout = QVBoxLayout(heatmap_tab)
         self.heatmap_layout.setContentsMargins(0, 16, 0, 0)
         self.heatmap_layout.addWidget(self.canvas)
-        self.tab_widget.addTab(heatmap_tab, "comment Heatmap")
+        self.tab_widget.addTab(heatmap_tab, "Commenter Heatmap")
 
         layout.addWidget(self.tab_widget)
 
@@ -303,54 +303,54 @@ class StatsDialog(QDialog):
             if not section_data:
                 continue
 
-            user_prs: list[PullRequest] = [pr for prs in section_data.prs_by_author.values() for pr in prs]
-            for pr in user_prs:
-                # Skip if we've already processed this PR
-                if pr.id in processed_prs:
-                    continue
-                processed_prs.add(pr.id)
+            for author, prs in section_data.prs_by_author.items():
+                for pr in prs:
+                    # Skip if we've already processed this PR
+                    if pr.id in processed_prs:
+                        continue
+                    processed_prs.add(pr.id)
 
-                pr_author = pr.user.login
-                # Only process if author is in configured users
-                if pr_author in stats_by_user:
-                    user_stats = stats_by_user[pr_author]
+                    pr_author = pr.user.login
+                    # Only process if author is in configured users
+                    if pr_author in stats_by_user:
+                        user_stats = stats_by_user[pr_author]
 
-                    # Count created PRs
-                    if pr.created_at >= cutoff_date:
-                        user_stats.created += 1
-                        user_stats.total_prs += 1
-                        user_stats.total_lines_added += (pr.additions or 0)
+                        # Count created PRs
+                        if pr.created_at >= cutoff_date:
+                            user_stats.created += 1
+                            user_stats.total_prs += 1
+                            user_stats.total_lines_added += (pr.additions or 0)
 
-                        # Calculate PR age
-                        if pr.merged_at:
-                            pr_age = pr.merged_at - pr.created_at
-                        else:
-                            pr_age = now - pr.created_at
-                        user_stats.total_pr_age += pr_age
+                            # Calculate PR age
+                            if pr.merged_at:
+                                pr_age = pr.merged_at - pr.created_at
+                            else:
+                                pr_age = now - pr.created_at
+                            user_stats.total_pr_age += pr_age
 
-                        # Calculate time since last comment if available
-                        if pr.last_comment_time:
-                            time_since_comment = now - pr.last_comment_time
-                            user_stats.total_time_since_comment += time_since_comment
+                            # Calculate time since last comment if available
+                            if pr.last_comment_time:
+                                time_since_comment = now - pr.last_comment_time
+                                user_stats.total_time_since_comment += time_since_comment
 
-                    # Count merged PRs and calculate time to merge
-                    if pr.merged and pr.merged_at and pr.merged_at >= cutoff_date:
-                        user_stats.merged += 1
-                        user_stats.total_merged_prs += 1
-                        merge_time = pr.merged_at - pr.created_at
-                        user_stats.total_time_to_merge += merge_time
+                        # Count merged PRs and calculate time to merge
+                        if pr.merged and pr.merged_at and pr.merged_at >= cutoff_date:
+                            user_stats.merged += 1
+                            user_stats.total_merged_prs += 1
+                            merge_time = pr.merged_at - pr.created_at
+                            user_stats.total_time_to_merge += merge_time
 
-                    # Count active PRs
-                    if pr.state.lower() == "open" and not pr.archived:
-                        user_stats.active += 1
+                        # Count active PRs
+                        if pr.state.lower() == "open" and not pr.archived:
+                            user_stats.active += 1
 
-                    user_stats.total_commits += pr.commit_count
+                        user_stats.total_commits += (pr.commit_count or 0)
 
-                # Count comments for all configured users
-                for commenter, count in (pr.comment_count_by_author or {}).items():
-                    if commenter in stats_by_user and commenter != pr_author:
-                        if pr.last_comment_time and pr.last_comment_time >= cutoff_date:
-                            stats_by_user[commenter].commented += 1
+                    # Count comments for all configured users
+                    for commenter, count in (pr.comment_count_by_author or {}).items():
+                        if commenter in stats_by_user and commenter != pr_author:
+                            if pr.last_comment_time and pr.last_comment_time >= cutoff_date:
+                                stats_by_user[commenter].commented += 1
 
         # Convert to list and sort by total PRs created
         result = list(stats_by_user.values())
@@ -450,7 +450,7 @@ class StatsDialog(QDialog):
             annot=True,
             fmt='g',
             cbar_kws={
-                'label': 'Number of comments',
+                'label': 'Number of Comments',
                 'orientation': 'horizontal',
                 'pad': 0.2,
                 'shrink': 0.8,
@@ -470,13 +470,8 @@ class StatsDialog(QDialog):
         )
 
         # Customize appearance
-        ax.set_title('comment Frequency Matrix',
-                     color=Colors.TEXT_PRIMARY,
-                     pad=20,
-                     fontsize=16,
-                     fontweight='bold')
         ax.set_xlabel('Author', color=Colors.TEXT_PRIMARY, labelpad=15)
-        ax.set_ylabel('commenter', color=Colors.TEXT_PRIMARY, labelpad=15)
+        ax.set_ylabel('Commenter', color=Colors.TEXT_PRIMARY, labelpad=15)
 
         # Style the ticks
         ax.tick_params(colors=Colors.TEXT_PRIMARY, which='both', length=0)

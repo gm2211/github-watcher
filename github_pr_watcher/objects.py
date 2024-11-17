@@ -299,6 +299,7 @@ class PullRequest:
     deletions: Optional[int] = None
     commit_count: Optional[int] = None
     comment_count_by_author: Optional[Dict[str, int]] = None
+    non_bot_comment_count: Optional[int] = None
     last_comment_time: Optional[datetime] = None
     last_comment_author: Optional[str] = None
     approved_by: Optional[List[str]] = None
@@ -331,6 +332,7 @@ class PullRequest:
             "deletions": self.deletions,
             "commit_count": self.commit_count,
             "comment_count_by_author": self.comment_count_by_author,
+            "non_bot_comment_count": self.non_bot_comment_count,
             "last_comment_time": (
                 self.last_comment_time.isoformat() if self.last_comment_time else None
             ),
@@ -377,6 +379,7 @@ class PullRequest:
                 deletions=pr_data.get("deletions"),
                 commit_count=pr_data.get("commit_count"),
                 comment_count_by_author=pr_data.get("comment_count_by_author"),
+                non_bot_comment_count=pr_data.get("non_bot_comment_count", 0),
                 last_comment_time=parse_datetime(pr_data.get("last_comment_time")),
                 last_comment_author=pr_data.get("last_comment_author"),
                 approved_by=pr_data.get("approved_by"),
