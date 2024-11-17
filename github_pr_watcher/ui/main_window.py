@@ -2,7 +2,9 @@ import traceback
 from typing import Dict
 
 from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import (
+    QApplication,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -42,6 +44,7 @@ class MainWindow(QMainWindow):
         self.workers = []
         self.refresh_worker = None
         self.is_refreshing = False
+        self.app = QApplication.instance()
 
         # Create central widget and main layout
         central_widget = QWidget()
@@ -420,3 +423,28 @@ class MainWindow(QMainWindow):
         from github_pr_watcher.ui.stats_dialog import StatsDialog
         dialog = StatsDialog(self.ui_state, self.settings, self)
         dialog.exec()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Handle window close event"""
+        try:
+            # Stop refresh timer
+            if self.auto_refresh_timer:
+                self.auto_refresh_timer.stop()
+
+            # Cancel any ongoing workers
+            for worker in self.workers:
+                worker._shutdown = True
+                worker.quit()
+                worker.wait()
+
+            # Clear workers list
+            self.workers.clear()
+
+            # Quit the application
+            self.app.quit()
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+            traceback.print_exc()
+        finally:
+            # Accept the close event
+            event.accept()

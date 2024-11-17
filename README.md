@@ -23,6 +23,16 @@ If that doesn't work, try using a versioned variant like `pip3.11 install github
 
 or download the latest release from the [releases page](https://github.com/gm2211/github-watcher/releases).
 
+## First Run
+
+When running the application for the first time, the statistics visualization may take a moment to initialize as it builds font caches and loads required libraries. Subsequent runs will be much faster.
+
+To pre-build the font cache during installation, run:
+
+```bash
+python -m github
+```
+
 ## Usage
 
 ```bash

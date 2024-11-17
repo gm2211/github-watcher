@@ -21,6 +21,7 @@ matplotlib = "^3.8.2"
 [tool.poetry.scripts]
 github-pr-watcher = "github_pr_watcher.main:main"
 gpw = "github_pr_watcher.main:main"
+post-install = "scripts.post_install:main"
 
 [build-system]
 requires = ["poetry-core"]
