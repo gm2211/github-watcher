@@ -92,3 +92,7 @@ def with_rate_limit_retry(
         return wrapper
 
     return decorator
+
+
+def ftoi(value: float) -> int:
+    return int(round(value, 1))

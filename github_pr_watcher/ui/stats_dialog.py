@@ -8,6 +8,7 @@ from matplotlib import pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -26,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from github_pr_watcher.settings import Settings
 from github_pr_watcher.ui.themes import Colors, Styles
+from github_pr_watcher.utils import ftoi
 
 SECONDS_PER_DAY = 86400
 
@@ -61,8 +63,17 @@ class StyledFrame(QFrame):
 
 
 @dataclass
+class ColumnData:
+    """Data for a table column"""
+    value: int | float
+    rank: float
+    reverse: bool = False  # True if lower values are better (like PR age)
+
+
+@dataclass
 class UserStats:
     """Statistics for a single user"""
+    user: str = ""
     created: int = 0
     merged: int = 0
     commented: int = 0
@@ -74,6 +85,97 @@ class UserStats:
     total_pr_age: timedelta = field(default_factory=lambda: timedelta())
     total_time_to_merge: timedelta = field(default_factory=lambda: timedelta())
     total_time_since_comment: timedelta = field(default_factory=lambda: timedelta())
+
+    @property
+    def avg_lines_added(self) -> int:
+        return ftoi(self.total_lines_added / max(1, self.total_prs))
+
+    @property
+    def avg_pr_age_days(self) -> int:
+        return ftoi(self.total_pr_age.total_seconds() / (max(1, self.total_prs) * SECONDS_PER_DAY))
+
+    @property
+    def avg_time_to_merge_days(self) -> int:
+        return ftoi(self.total_time_to_merge.total_seconds() / (max(1, self.total_merged_prs) * SECONDS_PER_DAY))
+
+    @property
+    def avg_time_since_comment_days(self) -> int:
+        return ftoi(self.total_time_since_comment.total_seconds() / (max(1, self.total_prs) * SECONDS_PER_DAY))
+
+    @property
+    def avg_commits(self) -> int:
+        return ftoi(self.total_commits / max(1, self.total_prs))
+
+
+def _get_gradient_color(rank: float, reverse: bool = False) -> str:
+    colors = [
+        "#A3D2DA",  # Light blue-gray
+        "#92C3CC",
+        "#81B4BE",
+        "#70A5B0",
+        "#5F96A2",
+        "#4E8794",
+        "#3D7886",
+        "#2C6978",
+        "#1B5A7A",
+        "#0A4B6C",  # Dark whale blue
+    ]
+
+    if reverse:
+        colors = list(reversed(colors))
+
+    # Convert rank to index (0-9)
+    index = min(len(colors) - 1, max(0, int(rank * 10)))
+    return colors[index]
+
+
+def _get_rank(value: float, values: List[float]) -> float:
+    """Get the rank (0-1) of a value in a sorted list of values
+    If all values are the same, they all get rank 0 (best)
+    """
+    if not values:
+        return 0
+
+    # If all values are the same, return 0 (best rank)
+    if len(set(values)) == 1:
+        return 0
+
+    # Sort values in ascending order
+    sorted_values = sorted(values)
+
+    # Find position of value (or where it would be inserted)
+    for i, v in enumerate(sorted_values):
+        if value <= v:
+            return i / max(1, len(sorted_values) - 1)
+
+    # If we get here, the value is larger than all others
+    return 1.0
+
+
+class ColoredTableItem(QTableWidgetItem):
+    def __init__(self, text: str, background_color: str, text_color: str = Colors.TEXT_PRIMARY):
+        super().__init__(text)
+        self._background_color = background_color
+        self._text_color = text_color
+        self.setBackground(QColor(background_color))
+        self.setForeground(QColor(text_color))
+
+    def clone(self):
+        return ColoredTableItem(self.text(), self._background_color, self._text_color)
+
+
+def _get_text_color(background_color: str) -> str:
+    """Get appropriate text color (black or white) based on background brightness"""
+    # Remove '#' and convert to RGB
+    r = int(background_color[1:3], 16)
+    g = int(background_color[3:5], 16)
+    b = int(background_color[5:7], 16)
+    
+    # Calculate perceived brightness using the formula: (R * 299 + G * 587 + B * 114) / 1000
+    brightness = (r * 299 + g * 587 + b * 114) / 1000
+    
+    # Use black text for light backgrounds, white text for dark backgrounds
+    return Colors.TEXT_PRIMARY if brightness < 128 else "#000000"
 
 
 class StatsDialog(QDialog):
@@ -216,38 +318,29 @@ class StatsDialog(QDialog):
         table = QTableWidget()
         table.setStyleSheet(f"""
             QTableWidget {{
-                background-color: #1c2128;
-                gridline-color: #373e47;
-                border: 1px solid #373e47;
+                border: 1px solid {Colors.BORDER_DEFAULT};
                 border-radius: 6px;
-            }}
-            QTableWidget::item {{
-                background-color: #1c2128;
-                padding: 5px;
-                border: none;
+                gridline-color: {Colors.BORDER_DEFAULT};
             }}
             QHeaderView::section {{
                 background-color: {Colors.BG_DARKER};
+                color: {Colors.TEXT_PRIMARY};
                 padding: 5px;
-                border: none;
-                border-right: 1px solid #373e47;
-                border-bottom: 1px solid #373e47;
-            }}
-            QHeaderView::section:hover {{
-                background-color: {Colors.BG_LIGHT};
+                border: 1px solid {Colors.BORDER_DEFAULT};
             }}
         """)
+
         table.verticalHeader().setVisible(False)
-        table.setSortingEnabled(True)  # Enable sorting
-        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Make table read-only
+        table.setSortingEnabled(True)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setShowGrid(True)
 
         # Set up columns
         self.columns = [
             ("User", str),
-            ("PRs Created", float),
-            ("PRs Merged", float),
-            ("PRs commented", float),
             ("Active PRs", int),
+            ("PRs Merged", float),
+            ("PRs Commented", float),
             ("Avg Lines Added", int),
             ("Avg PR Age (days)", float),
             ("Avg TTM (days)", float),
@@ -258,11 +351,13 @@ class StatsDialog(QDialog):
         table.setHorizontalHeaderLabels([col[0] for col in self.columns])
 
         # Set column stretch behavior
-        table.horizontalHeader().setStyleSheet("background-color: transparent;")
+        header = table.horizontalHeader()
+        header.setStyleSheet(f"background-color: {Colors.BG_DARKER};")
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         # All columns get equal stretch
         for i in range(len(self.columns)):
-            table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
 
         return table
 
@@ -484,11 +579,11 @@ class StatsDialog(QDialog):
 
         # Update summary table (only configured users)
         stats_by_user = self._calculate_user_stats(selected_period_days)
-        
+
         # Clear the table first
         self.table.clearContents()
         self.table.setRowCount(0)
-        
+
         # Sort users to ensure consistent ordering
         sorted_users = sorted(stats_by_user.keys())
         self.table.setRowCount(len(sorted_users))
@@ -497,43 +592,78 @@ class StatsDialog(QDialog):
         self.table.setSortingEnabled(False)
 
         try:
+            # Get all values for ranking once
+            all_stats = list(stats_by_user.values())
+
             # Update table row by row
             for row_idx, user in enumerate(sorted_users):
                 user_stats = stats_by_user[user]
-                
-                total_prs = max(1, user_stats.total_prs)
-                total_merged = max(1, user_stats.total_merged_prs)
-                
+
                 # Create all items for this row
                 row_items = []
-                
-                # User column
-                user_item = QTableWidgetItem(user)
-                user_item.setData(Qt.ItemDataRole.UserRole, user)
+
+                # User column (no coloring)
+                user_item = ColoredTableItem(user, Colors.BG_DARK)
                 user_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
                 row_items.append(user_item)
-                
-                # Stats columns with their values and formatting
-                stats_data = [
-                    (user_stats.created, False),
-                    (user_stats.merged, False),
-                    (user_stats.commented, False),
-                    (user_stats.active, False),
-                    (round(user_stats.total_lines_added / total_prs), False),
-                    (round(user_stats.total_pr_age.total_seconds() / (total_prs * SECONDS_PER_DAY), 1), True),
-                    (round(user_stats.total_time_to_merge.total_seconds() / (total_merged * SECONDS_PER_DAY), 1), True),
-                    (round(user_stats.total_time_since_comment.total_seconds() / (total_prs * SECONDS_PER_DAY), 1), True),
-                    (round(user_stats.total_commits / total_prs, 1) if user_stats.total_commits > 0 else 0, True),
+
+                # Calculate values and ranks
+                columns_data: List[ColumnData] = [
+                    ColumnData(
+                        value=user_stats.active,
+                        rank=_get_rank(user_stats.active, [s.active for s in all_stats]),
+                    ),
+                    ColumnData(
+                        value=user_stats.merged,
+                        rank=_get_rank(user_stats.merged, [s.merged for s in all_stats]),
+                    ),
+                    ColumnData(
+                        value=user_stats.commented,
+                        rank=_get_rank(user_stats.commented, [s.commented for s in all_stats]),
+                    ),
+                    ColumnData(
+                        value=user_stats.avg_lines_added,
+                        rank=_get_rank(user_stats.avg_lines_added, [s.avg_lines_added for s in all_stats]),
+                    ),
+                    ColumnData(
+                        value=user_stats.avg_pr_age_days,
+                        rank=_get_rank(user_stats.avg_pr_age_days, [s.avg_pr_age_days for s in all_stats]),
+                        reverse=True
+                    ),
+                    ColumnData(
+                        value=user_stats.avg_time_to_merge_days,
+                        rank=_get_rank(user_stats.avg_time_to_merge_days,
+                                       [s.avg_time_to_merge_days for s in all_stats]),
+                        reverse=True
+                    ),
+                    ColumnData(
+                        value=user_stats.avg_time_since_comment_days,
+                        rank=_get_rank(user_stats.avg_time_since_comment_days,
+                                       [s.avg_time_since_comment_days for s in all_stats]),
+                        reverse=True
+                    ),
+                    ColumnData(
+                        value=user_stats.avg_commits,
+                        rank=_get_rank(user_stats.avg_commits, [s.avg_commits for s in all_stats]),
+                    ),
                 ]
-                
+
                 # Create items for stats columns
-                for value, is_float in stats_data:
-                    item = QTableWidgetItem()
-                    item.setData(Qt.ItemDataRole.UserRole, float(value))
-                    item.setText(f"{value:.1f}" if is_float else str(value))
+                for col_data in columns_data:
+                    # Get the background color
+                    bg_color = _get_gradient_color(col_data.rank, col_data.reverse)
+                    text_color = _get_text_color(bg_color)
+
+                    # Create colored item
+                    item = ColoredTableItem(
+                        text=str(col_data.value),
+                        background_color=bg_color,
+                        text_color=text_color
+                    )
+                    item.setData(Qt.ItemDataRole.UserRole, float(col_data.value))
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
                     row_items.append(item)
-                
+
                 # Set all items for this row at once
                 for col, item in enumerate(row_items):
                     self.table.setItem(row_idx, col, item)
@@ -546,7 +676,7 @@ class StatsDialog(QDialog):
         matrix, authors, commenters = self._calculate_comment_heatmap(selected_period_days)
         self._update_heatmap(matrix, authors, commenters)
 
-        # Sort by PRs Created column by default (descending)
+        # Sort by Active PRs column by default (descending)
         self.table.sortItems(1, Qt.SortOrder.DescendingOrder)
 
         # Adjust column widths
