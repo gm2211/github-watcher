@@ -144,6 +144,13 @@ class MainWindow(QMainWindow):
         test_notif_btn.setStyleSheet(Styles.BUTTON)
         buttons_layout.addWidget(test_notif_btn)
 
+        # Stats button
+        stats_btn = QPushButton("📊 Stats")
+        stats_btn.clicked.connect(self.show_stats)
+        stats_btn.setFixedWidth(80)
+        stats_btn.setStyleSheet(Styles.BUTTON)
+        buttons_layout.addWidget(stats_btn)
+
         # Refresh button
         refresh_btn = QPushButton("🔄 Refresh")
         refresh_btn.clicked.connect(self.refresh_data)
@@ -407,3 +414,9 @@ class MainWindow(QMainWindow):
     def showEvent(self, event):
         """Handle window show event"""
         super().showEvent(event)
+
+    def show_stats(self):
+        """Show the stats dialog"""
+        from github_pr_watcher.ui.stats_dialog import StatsDialog
+        dialog = StatsDialog(self.ui_state, self)
+        dialog.exec()
