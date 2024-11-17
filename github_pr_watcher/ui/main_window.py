@@ -230,6 +230,9 @@ class MainWindow(QMainWindow):
                 for prs in needs_review_data.values():
                     needs_review_numbers.update(pr.number for pr in prs)
 
+            # Update org filter with all PRs
+            self.filter_bar.update_org_filter(needs_review_data)
+
             # Update each section with filtered data
             for frame in [
                 self.open_prs_frame,

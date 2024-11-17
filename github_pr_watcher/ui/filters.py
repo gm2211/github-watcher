@@ -20,6 +20,7 @@ class FilterState:
     show_drafts: bool = True
     group_by_user: bool = False
     selected_users: Set[str] = field(default_factory=lambda: {ALL_AUTHORS})
+    selected_orgs: Set[str] = field(default_factory=lambda: {"All Organizations"})
     search_text: str = ""
 
     def to_dict(self) -> dict:
@@ -28,6 +29,7 @@ class FilterState:
             "show_drafts": self.show_drafts,
             "group_by_user": self.group_by_user,
             "selected_users": self.selected_users,
+            "selected_orgs": self.selected_orgs,
             "search_text": self.search_text,
         }
 
@@ -39,6 +41,7 @@ class FiltersBar(QWidget):
     def __init__(self):
         super().__init__(None)
         self.user_filter = MultiSelectComboBox(default_selection=ALL_AUTHORS)
+        self.org_filter = MultiSelectComboBox(default_selection="All Organizations")
         self.show_drafts_toggle = QCheckBox("Show Drafts")
         self.group_by_user_toggle = QCheckBox("Group by User")
         self.search_box = QLineEdit()
@@ -54,8 +57,9 @@ class FiltersBar(QWidget):
         self.layout.setContentsMargins(16, 8, 16, 8)
         self.layout.setSpacing(16)
 
-        # Create widgets - reordered to put search box last
+        # Create widgets
         self._setup_toggles()
+        self._setup_org_filter()
         self._setup_user_filter()
         self._setup_search_box()
 
@@ -161,6 +165,24 @@ class FiltersBar(QWidget):
 
         self.layout.addWidget(filter_container)
 
+    def _setup_org_filter(self):
+        """Setup organization filter combo box"""
+        # Container for filter and label
+        filter_container = QWidget()
+        filter_layout = QHBoxLayout(filter_container)
+
+        # Label
+        label = QLabel("Filter by Organization:")
+        label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; font-size: 12px;")
+        filter_layout.addWidget(label)
+
+        # Combo box
+        self.org_filter.setStyleSheet(Styles.COMBO_BOX)
+        self.org_filter.selectionChanged.connect(self._on_selected_orgs_changed)
+        filter_layout.addWidget(self.org_filter)
+
+        self.layout.addWidget(filter_container)
+
     def _on_drafts_toggled(self):
         self.filter_state.show_drafts = self.show_drafts_toggle.isChecked()
         self.filters_changed_signal.emit()
@@ -171,6 +193,10 @@ class FiltersBar(QWidget):
 
     def _on_selected_users_changed(self):
         self.filter_state.selected_users = self.user_filter.get_selected_items()
+        self.filters_changed_signal.emit()
+
+    def _on_selected_orgs_changed(self):
+        self.filter_state.selected_orgs = self.org_filter.get_selected_items()
         self.filters_changed_signal.emit()
 
     def update_user_filter(self, users):
@@ -189,11 +215,28 @@ class FiltersBar(QWidget):
             print(f"Error updating user filter: {e}")
             traceback.print_exc()
 
+    def update_org_filter(self, prs_by_author):
+        """Update available organizations in the filter"""
+        try:
+            orgs = {"All Organizations"}
+            for prs in prs_by_author.values():
+                for pr in prs:
+                    orgs.add(pr.repo_owner)
+
+            # Clear existing items
+            self.org_filter.clear()
+
+            # Add items
+            self.org_filter.addItems(sorted(orgs))
+
+        except Exception as e:
+            print(f"Error updating org filter: {e}")
+            traceback.print_exc()
+
     def get_filter_state(self) -> FilterState:
         """Get current state of all filters"""
         return self.filter_state
 
-    # weird impl - we're using dict structure to figure out if group_by_user is enabled
     def filter_prs_grouped_by_users(self, pr_data) -> Dict[str, list[PullRequest]]:
         """Filter PRs based on current filter state"""
         filtered_prs = {}
@@ -206,7 +249,7 @@ class FiltersBar(QWidget):
             ):
                 continue
 
-            # Apply draft and search filters, always filter out archived
+            # Apply draft, org, and search filters, always filter out archived
             filtered_user_prs = []
             for pr in prs:
                 if not self.filter_state.show_drafts and pr.draft:
@@ -214,6 +257,11 @@ class FiltersBar(QWidget):
                 if pr.archived:  # Always filter out archived repos
                     continue
                 if not self._matches_search(pr):
+                    continue
+                if (
+                    "All Organizations" not in self.filter_state.selected_orgs
+                    and pr.repo_owner not in self.filter_state.selected_orgs
+                ):
                     continue
                 filtered_user_prs.append(pr)
 

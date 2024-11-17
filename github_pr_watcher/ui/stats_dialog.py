@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QFrame,
     QSizePolicy,
+    QCheckBox,
 )
 
 from github_pr_watcher.settings import Settings
@@ -235,11 +236,12 @@ class StatsDialog(QDialog):
         self.loading.setFormat("Initializing visualization...")
         layout.addWidget(self.loading)
 
-        # Create period selector in a styled frame
-        period_frame = StyledFrame()
-        period_layout = QHBoxLayout(period_frame)
-        period_layout.setContentsMargins(0, 0, 0, 0)
+        # Create period selector and toggle in a styled frame
+        controls_frame = StyledFrame()
+        controls_layout = QHBoxLayout(controls_frame)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Period selector
         period_label = QLabel("Time Period:")
         period_label.setStyleSheet(f"""
             color: {Colors.TEXT_PRIMARY};
@@ -251,11 +253,18 @@ class StatsDialog(QDialog):
         self.period_combo.setStyleSheet(Styles.COMBO_BOX)
         self.period_combo.currentTextChanged.connect(self.update_stats)
 
-        period_layout.addWidget(period_label)
-        period_layout.addWidget(self.period_combo)
-        period_layout.addStretch()
+        # Bot comments toggle
+        self.include_bots_toggle = QCheckBox("Include Bot Comments")
+        self.include_bots_toggle.setChecked(True)
+        self.include_bots_toggle.setStyleSheet(Styles.CHECKBOX)
+        self.include_bots_toggle.stateChanged.connect(self.update_stats)
 
-        layout.addWidget(period_frame)
+        controls_layout.addWidget(period_label)
+        controls_layout.addWidget(self.period_combo)
+        controls_layout.addStretch()
+        controls_layout.addWidget(self.include_bots_toggle)
+
+        layout.addWidget(controls_frame)
 
         # Initialize matplotlib components right away with dynamic sizing
         self.figure = Figure()  # Remove fixed figsize
@@ -434,6 +443,7 @@ class StatsDialog(QDialog):
         cutoff_date = datetime.now().astimezone() - timedelta(days=selected_period_days)
         comment_counts = {}  # author -> commenter -> count
         all_commenters = set()  # Track all users who have commented
+        include_bots = self.include_bots_toggle.isChecked()
 
         # First pass: collect all commenters and initialize counts for configured users
         for user in self.settings.users:
@@ -453,8 +463,12 @@ class StatsDialog(QDialog):
                     if pr.created_at < cutoff_date:
                         continue
 
-                    # Count comments (using comments as a proxy)
+                    # Count comments
                     for commenter, count in (pr.comment_count_by_author or {}).items():
+                        # Skip bot comments if toggle is off
+                        if not include_bots and commenter.endswith("[bot]"):
+                            continue
+
                         if commenter != pr.user.login:  # Don't count self-comments
                             all_commenters.add(commenter)
                             comment_counts[pr.user.login][commenter] = (
