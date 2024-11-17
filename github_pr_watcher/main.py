@@ -1,10 +1,8 @@
+import argparse
 import os
 import sys
-
-import tomllib as tomli
 import traceback
 from datetime import timedelta
-from pathlib import Path
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
@@ -15,18 +13,6 @@ from github_pr_watcher.github_prs_client import GitHubPRsClient
 from github_pr_watcher.settings import Settings
 from github_pr_watcher.ui.main_window import MainWindow
 from github_pr_watcher.ui.ui_state import UIState
-
-
-def get_version() -> str:
-    """Read version from pyproject.toml"""
-    try:
-        pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
-        with open(pyproject_path, "rb") as f:
-            pyproject = tomli.load(f)
-            return pyproject["tool"]["poetry"]["version"]
-    except Exception as e:
-        print(f"Error reading version from pyproject.toml: {e}")
-        return "unknown"
 
 
 def get_resource_path(relative_path):
@@ -40,12 +26,11 @@ def get_resource_path(relative_path):
 
 
 def main():
-    app_version = get_version()
-
-    # Add version flag support
-    if len(sys.argv) > 1 and sys.argv[1] in ["--version", "-v"]:
-        print(f"GitHub PR Watcher v{app_version}")
-        return 0
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='GitHub PR Watcher')
+    parser.add_argument('--version', default='dev', help='Application version')
+    args = parser.parse_args()
+    app_version = args.version
 
     # Create QApplication instance
     app = QApplication(sys.argv)
@@ -69,8 +54,8 @@ def main():
         QTimer.singleShot(0, window.refresh_data)
         return app.exec()
     except Exception as e:
-        traceback.print_exc()
         print(f"Error fetching PR data: {e}")
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

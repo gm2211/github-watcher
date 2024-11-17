@@ -22,8 +22,8 @@ pillow = "^10.0.0"
 pyinstaller = "^6.0.0"
 
 [tool.poetry.scripts]
-github-pr-watcher = "github_pr_watcher.main:main"
-gpw = "github_pr_watcher.main:main"
+github-pr-watcher = "github_pr_watcher.main:main --version='%(version)s'"
+gpw = "github_pr_watcher.main:main --version='%(version)s'"
 
 [build-system]
 requires = ["poetry-core"]
