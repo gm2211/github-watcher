@@ -18,12 +18,17 @@ jobs:
         ref: main
         fetch-depth: 0
 
-    - name: Update version in pyproject.toml
+    - name: Update version in files
       run: |
         VERSION=$(echo $GITHUB_REF | sed -e 's,.*/\(.*\),\1,' -e 's/^v//')
         echo "Setting version to: $VERSION"
         echo "VERSION=$VERSION" >> $GITHUB_ENV
+        
+        # Update version in pyproject.toml
         sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+        
+        # Update APP_VERSION in main.py
+        sed -i "s/^APP_VERSION = .*/APP_VERSION = \"$VERSION\"/" github_pr_watcher/main.py
         
     - name: Create Pull Request
       id: cpr
@@ -34,6 +39,10 @@ jobs:
         title: "Bump version to ${{ env.VERSION }}"
         body: |
           Automated version bump triggered by release ${{ github.ref_name }}
+          
+          Updates:
+          - pyproject.toml: version = "${{ env.VERSION }}"
+          - main.py: APP_VERSION = "${{ env.VERSION }}"
         branch: "version-bump/${{ env.VERSION }}"
         base: main
         delete-branch: true

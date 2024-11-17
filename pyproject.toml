@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "github-pr-watcher"
-version = "1.21.0"
+version = "1.20.0"
 repository = "https://github.com/gm2211/github-watcher"
 description = "A MacOs UI tool to monitor GitHub Pull Requests"
 authors = ["gm2211 <gmecocci@outlook.com>"]
@@ -22,8 +22,8 @@ pillow = "^10.0.0"
 pyinstaller = "^6.0.0"
 
 [tool.poetry.scripts]
-github-pr-watcher = "github_pr_watcher.main:main --version='%(version)s'"
-gpw = "github_pr_watcher.main:main --version='%(version)s'"
+github-pr-watcher = "github_pr_watcher.main:main"
+gpw = "github_pr_watcher.main:main"
 
 [build-system]
 requires = ["poetry-core"]

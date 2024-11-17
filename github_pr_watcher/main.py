@@ -1,4 +1,3 @@
-import argparse
 import os
 import sys
 import traceback
@@ -14,6 +13,8 @@ from github_pr_watcher.settings import Settings
 from github_pr_watcher.ui.main_window import MainWindow
 from github_pr_watcher.ui.ui_state import UIState
 
+APP_VERSION = "1.20.0"
+
 
 def get_resource_path(relative_path):
     if "Contents/Resources" in os.path.abspath(__file__):
@@ -26,16 +27,10 @@ def get_resource_path(relative_path):
 
 
 def main():
-    # Set up argument parser
-    parser = argparse.ArgumentParser(description='GitHub PR Watcher')
-    parser.add_argument('--version', default='dev', help='Application version')
-    args = parser.parse_args()
-    app_version = args.version
-
     # Create QApplication instance
     app = QApplication(sys.argv)
     app.setApplicationName(f"GitHub PR Watcher")
-    app.setApplicationVersion(app_version)
+    app.setApplicationVersion(APP_VERSION)
     app.setWindowIcon(QIcon(get_resource_path("resources/icon.png")))
 
     try:
@@ -47,7 +42,7 @@ def main():
             github_token,
             recency_threshold=timedelta(days=1),
         )
-        window = MainWindow(github_prs_client, ui_state, settings, app_version)
+        window = MainWindow(github_prs_client, ui_state, settings, APP_VERSION)
         window.show()
 
         # Schedule refresh after window is shown

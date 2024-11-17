@@ -2,7 +2,7 @@ import subprocess
 import webbrowser
 from urllib.parse import urlencode
 
-from PyQt6.QtWidgets import QInputDialog, QMessageBox
+from PyQt6.QtWidgets import QInputDialog, QMessageBox, QLineEdit
 
 KEYCHAIN_SERVICE = "pr_watcher_github_api_key"
 KEYCHAIN_ACCOUNT = "token"
@@ -75,7 +75,7 @@ def get_github_api_key():
                 None,
                 "GitHub API Token",
                 "Please paste your new GitHub API token:",
-                echo=QInputDialog.InputMode.Password,
+                echo=QLineEdit.EchoMode.Password
             )
 
             if ok and token:
