@@ -10,7 +10,7 @@ import requests
 from github_pr_watcher.notifications import notify
 from github_pr_watcher.objects import PullRequest, TimelineEvent
 from github_pr_watcher.settings import Settings
-from github_pr_watcher.utils import parse_datetime
+from github_pr_watcher.utils import parse_datetime, with_rate_limit_retry
 
 
 class PRSection(Enum):
@@ -27,10 +27,10 @@ class PRQueryConfig:
 
 class GitHubPRsClient:
     def __init__(
-        self,
-        github_token,
-        recency_threshold=timedelta(days=1),
-        max_workers=4,
+            self,
+            github_token,
+            recency_threshold=timedelta(days=1),
+            max_workers=4,
     ):
         self.base_url = "https://api.github.com"
         self.headers = {
@@ -57,6 +57,71 @@ class GitHubPRsClient:
             ),
         }
 
+    def get_pr_data(
+            self, users: List[str], section: PRSection = None, settings: Settings = None
+    ) -> Dict[PRSection, Dict[str, List[Tuple[PullRequest, bool]]]]:
+        """Get PR data from GitHub API with parallel processing"""
+        if self._shutdown:
+            return {}
+
+        try:
+            # Process only requested section or all sections
+            sections_to_process = [section] if section else self.section_queries.keys()
+
+            # Update the CLOSED query with current threshold if settings provided
+            if settings:
+                recent_days = settings.thresholds.recently_closed_days
+                self.section_queries[PRSection.CLOSED] = PRQueryConfig(
+                    query=f"is:pr is:closed closed:>={self._recent_date(recent_days)}"
+                )
+
+            prs_by_author_by_section = {}
+            for section in sections_to_process:
+                query_config = self.section_queries[section]
+                prs_by_author_by_section[section] = self._fetch_prs_by_author(
+                    users, query_config
+                )
+
+            return prs_by_author_by_section
+
+        except Exception as e:
+            print(f"Error in get_pr_data: {e}")
+            traceback.print_exc()
+            return {}
+
+    def get_pr_details(self, repo_owner, repo_name, pr_number):
+        """Get detailed PR information including file changes"""
+        endpoint = f"/repos/{repo_owner}/{repo_name}/pulls/{pr_number}"
+        response = self._make_request('GET', f"{self.base_url}{endpoint}")
+        data = response.json()
+
+        # Convert datetime strings to proper format
+        for date_field in ["created_at", "updated_at", "closed_at", "merged_at"]:
+            if date_val := data.get(date_field):
+                try:
+                    if isinstance(date_val, datetime):
+                        data[date_field] = date_val.isoformat()
+                    elif isinstance(date_val, str):
+                        if date_val.endswith("Z"):
+                            date_val = date_val[:-1] + "+00:00"
+                        data[date_field] = date_val
+                    else:
+                        data[date_field] = str(date_val)
+                except Exception as e:
+                    print(
+                        f"Warning: Error parsing date {date_field}: {e} (value: {date_val}, type: {type(date_val)})"
+                    )
+                    traceback.print_exc()
+                    data[date_field] = None
+
+        # Add repo info if not present
+        if "repo_owner" not in data:
+            data["repo_owner"] = repo_owner
+        if "repo_name" not in data:
+            data["repo_name"] = repo_name
+
+        return data
+
     def get_pr_timeline(self, repo_owner, repo_name, pr_number) -> list[TimelineEvent]:
         """Fetch the timeline of a specific Pull Request."""
         endpoint = f"/repos/{repo_owner}/{repo_name}/issues/{pr_number}/timeline"
@@ -64,10 +129,7 @@ class GitHubPRsClient:
         events = []
 
         while True:
-            response = requests.get(
-                f"{self.base_url}{endpoint}", headers=self.headers, params=params
-            )
-            response.raise_for_status()
+            response = self._make_request('GET', f"{self.base_url}{endpoint}", params=params)
             data = response.json()
             events.extend(TimelineEvent.parse_events(data))
 
@@ -97,12 +159,7 @@ class GitHubPRsClient:
 
         try:
             while True:
-                response = requests.get(
-                    f"{self.base_url}{endpoint}", headers=self.headers, params=params
-                )
-                if response.status_code != 200:
-                    print(f"Error in _search_issues: {response.text}")
-                    return []
+                response = self._make_request('GET', f"{self.base_url}{endpoint}", params=params)
                 data = response.json()
 
                 # Process each PR item
@@ -178,46 +235,12 @@ class GitHubPRsClient:
             traceback.print_exc()
             return []
 
-    def get_pr_details(self, repo_owner, repo_name, pr_number):
-        """Get detailed PR information including file changes"""
-        endpoint = f"/repos/{repo_owner}/{repo_name}/pulls/{pr_number}"
-        response = requests.get(f"{self.base_url}{endpoint}", headers=self.headers)
-        response.raise_for_status()
-        data = response.json()
-
-        # Convert datetime strings to proper format
-        for date_field in ["created_at", "updated_at", "closed_at", "merged_at"]:
-            if date_val := data.get(date_field):
-                try:
-                    if isinstance(date_val, datetime):
-                        data[date_field] = date_val.isoformat()
-                    elif isinstance(date_val, str):
-                        if date_val.endswith("Z"):
-                            date_val = date_val[:-1] + "+00:00"
-                        data[date_field] = date_val
-                    else:
-                        data[date_field] = str(date_val)
-                except Exception as e:
-                    print(
-                        f"Warning: Error parsing date {date_field}: {e} (value: {date_val}, type: {type(date_val)})"
-                    )
-                    traceback.print_exc()
-                    data[date_field] = None
-
-        # Add repo info if not present
-        if "repo_owner" not in data:
-            data["repo_owner"] = repo_owner
-        if "repo_name" not in data:
-            data["repo_name"] = repo_name
-
-        return data
-
     def _fetch_and_enrich_with_pr_details(self, pr: PullRequest) -> (PullRequest, bool):
         """Helper method to fetch details for a single PR"""
         try:
             # Get repository details first
             repo_url = f"{self.base_url}/repos/{pr.repo_owner}/{pr.repo_name}"
-            repo_response = requests.get(repo_url, headers=self.headers)
+            repo_response = self._make_request('GET', repo_url)
             if repo_response.status_code == 200:
                 repo_data = repo_response.json()
                 pr.archived = repo_data.get("archived", False)
@@ -242,22 +265,14 @@ class GitHubPRsClient:
 
             # Fetch comments and reviews in parallel
             with ThreadPoolExecutor(max_workers=2) as executor:
-                comments_future = executor.submit(
-                    requests.get, comments_url, headers=self.headers
-                )
-                reviews_future = executor.submit(
-                    requests.get, reviews_url, headers=self.headers
-                )
+                comments_future = executor.submit(self._make_request, 'GET', comments_url)
+                reviews_future = executor.submit(self._make_request, 'GET', reviews_url)
 
                 comments_response = comments_future.result()
                 reviews_response = reviews_future.result()
 
-            comments = (
-                comments_response.json() if comments_response.status_code == 200 else []
-            )
-            reviews = (
-                reviews_response.json() if reviews_response.status_code == 200 else []
-            )
+            comments = comments_response.json() if comments_response.status_code == 200 else []
+            reviews = reviews_response.json() if reviews_response.status_code == 200 else []
 
             # Process comments
             comment_count_by_author = {}
@@ -267,7 +282,7 @@ class GitHubPRsClient:
             for comment in sorted(comments, key=lambda x: x["created_at"]):
                 author = comment["user"]["login"]
                 comment_count_by_author[author] = (
-                    comment_count_by_author.get(author, 0) + 1
+                        comment_count_by_author.get(author, 0) + 1
                 )
 
                 comment_time = parse_datetime(comment["created_at"])
@@ -284,8 +299,8 @@ class GitHubPRsClient:
 
                 # Update latest review for this reviewer
                 if (
-                    reviewer not in latest_reviews
-                    or review_time > latest_reviews[reviewer][0]
+                        reviewer not in latest_reviews
+                        or review_time > latest_reviews[reviewer][0]
                 ):
                     latest_reviews[reviewer] = (review_time, review["state"].lower())
 
@@ -317,40 +332,8 @@ class GitHubPRsClient:
             pr.merged_by = None
             return pr, True
 
-    def get_pr_data(
-        self, users: List[str], section: PRSection = None, settings: Settings = None
-    ) -> Dict[PRSection, Dict[str, List[Tuple[PullRequest, bool]]]]:
-        """Get PR data from GitHub API with parallel processing"""
-        if self._shutdown:
-            return {}
-
-        try:
-            # Process only requested section or all sections
-            sections_to_process = [section] if section else self.section_queries.keys()
-
-            # Update the CLOSED query with current threshold if settings provided
-            if settings:
-                recent_days = settings.thresholds.recently_closed_days
-                self.section_queries[PRSection.CLOSED] = PRQueryConfig(
-                    query=f"is:pr is:closed closed:>={self._recent_date(recent_days)}"
-                )
-
-            prs_by_author_by_section = {}
-            for section in sections_to_process:
-                query_config = self.section_queries[section]
-                prs_by_author_by_section[section] = self._fetch_prs_by_author(
-                    users, query_config
-                )
-
-            return prs_by_author_by_section
-
-        except Exception as e:
-            print(f"Error in get_pr_data: {e}")
-            traceback.print_exc()
-            return {}
-
     def _fetch_prs_by_author(
-        self, users, query_config: PRQueryConfig
+            self, users, query_config: PRQueryConfig
     ) -> Dict[str, List[Tuple[PullRequest, bool]]]:
         """Fetch PR data for a specific section"""
         try:
@@ -395,6 +378,11 @@ class GitHubPRsClient:
             print(f"Error fetching section data: {e}")
             traceback.print_exc()
             return {}
+
+    @with_rate_limit_retry()
+    def _make_request(self, method: str, url: str, **kwargs) -> requests.Response:
+        """Make a request to the GitHub API with rate limit handling"""
+        return requests.request(method, url, headers=self.headers, **kwargs)
 
     @staticmethod
     def _recent_date(days=7):
