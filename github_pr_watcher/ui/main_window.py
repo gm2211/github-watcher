@@ -418,5 +418,5 @@ class MainWindow(QMainWindow):
     def show_stats(self):
         """Show the stats dialog"""
         from github_pr_watcher.ui.stats_dialog import StatsDialog
-        dialog = StatsDialog(self.ui_state, self)
+        dialog = StatsDialog(self.ui_state, self.settings, self)
         dialog.exec()
