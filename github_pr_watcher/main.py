@@ -13,7 +13,7 @@ from github_pr_watcher.settings import Settings
 from github_pr_watcher.ui.main_window import MainWindow
 from github_pr_watcher.ui.ui_state import UIState
 
-APP_VERSION = "1.23.0"
+APP_VERSION = "1.24.0"
 
 
 def get_resource_path(relative_path):
