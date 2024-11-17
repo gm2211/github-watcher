@@ -259,7 +259,7 @@ class MainWindow(QMainWindow):
                             continue
 
                         # Add user header
-                        user_header = QLabel(f"Author: {user}")
+                        user_header = QLabel(f"Author: {user} ({len(user_prs)})")
                         user_header.setStyleSheet(
                             f"""
                             QLabel {{
