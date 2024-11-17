@@ -1,6 +1,7 @@
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -23,7 +24,6 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
 )
 
-from github_pr_watcher.objects import PullRequest
 from github_pr_watcher.settings import Settings
 from github_pr_watcher.ui.themes import Colors, Styles
 
@@ -63,7 +63,6 @@ class StyledFrame(QFrame):
 @dataclass
 class UserStats:
     """Statistics for a single user"""
-    user: str = ""
     created: int = 0
     merged: int = 0
     commented: int = 0
@@ -75,25 +74,6 @@ class UserStats:
     total_pr_age: timedelta = field(default_factory=lambda: timedelta())
     total_time_to_merge: timedelta = field(default_factory=lambda: timedelta())
     total_time_since_comment: timedelta = field(default_factory=lambda: timedelta())
-
-    def to_display_stats(self) -> Dict:
-        """Convert raw stats to display format"""
-        total_prs = max(1, self.total_prs)  # Avoid division by zero
-        total_merged = max(1, self.total_merged_prs)  # Avoid division by zero
-
-        return {
-            "user": self.user,
-            "created_per_week": self.created,
-            "merged_per_week": self.merged,
-            "commented_per_week": self.commented,
-            "active": self.active,
-            "avg_lines_added": round(self.total_lines_added / total_prs),
-            "avg_pr_age": round(self.total_pr_age.total_seconds() / (total_prs * SECONDS_PER_DAY), 1),
-            "avg_time_to_merge": round(self.total_time_to_merge.total_seconds() / (total_merged * SECONDS_PER_DAY), 1),
-            "avg_time_since_comment": round(
-                self.total_time_since_comment.total_seconds() / (total_prs * SECONDS_PER_DAY), 1),
-            "avg_commits": round(self.total_commits / total_prs, 1) if self.total_commits > 0 else 0,
-        }
 
 
 class StatsDialog(QDialog):
@@ -286,14 +266,14 @@ class StatsDialog(QDialog):
 
         return table
 
-    def _calculate_user_stats(self, selected_period_days: int) -> List[UserStats]:
+    def _calculate_user_stats(self, selected_period_days: int) -> Dict[str, UserStats]:
         """Calculate user statistics - only for configured users"""
         cutoff_date = datetime.now().astimezone() - timedelta(days=selected_period_days)
         stats_by_user: Dict[str, UserStats] = {}
 
         # Initialize stats for all configured users
         for user in sorted(set(self.settings.users)):
-            stats_by_user[user] = UserStats(user=user)
+            stats_by_user[user] = UserStats()
 
         now = datetime.now().astimezone()
 
@@ -303,7 +283,7 @@ class StatsDialog(QDialog):
             if not section_data:
                 continue
 
-            for author, prs in section_data.prs_by_author.items():
+            for prs in section_data.prs_by_author.values():
                 for pr in prs:
                     # Skip if we've already processed this PR
                     if pr.id in processed_prs:
@@ -352,10 +332,7 @@ class StatsDialog(QDialog):
                             if pr.last_comment_time and pr.last_comment_time >= cutoff_date:
                                 stats_by_user[commenter].commented += 1
 
-        # Convert to list and sort by total PRs created
-        result = list(stats_by_user.values())
-        result.sort(key=lambda x: x.created, reverse=True)
-        return result
+        return stats_by_user
 
     def _calculate_comment_heatmap(self, selected_period_days: int) -> Tuple[np.ndarray, List[str], List[str]]:
         """Calculate comment frequency between authors and commenters"""
@@ -506,37 +483,66 @@ class StatsDialog(QDialog):
         selected_period_days = self._get_period_days()
 
         # Update summary table (only configured users)
-        stats = self._calculate_user_stats(selected_period_days)
-        self.table.setRowCount(len(stats))
+        stats_by_user = self._calculate_user_stats(selected_period_days)
+        
+        # Clear the table first
+        self.table.clearContents()
+        self.table.setRowCount(0)
+        
+        # Sort users to ensure consistent ordering
+        sorted_users = sorted(stats_by_user.keys())
+        self.table.setRowCount(len(sorted_users))
 
-        for row, user_stats in enumerate(stats):
-            display_stats = user_stats.to_display_stats()
-            columns = [
-                (user_stats.user, Qt.AlignmentFlag.AlignLeft),
-                (display_stats["created_per_week"], Qt.AlignmentFlag.AlignCenter),
-                (display_stats["merged_per_week"], Qt.AlignmentFlag.AlignCenter),
-                (display_stats["commented_per_week"], Qt.AlignmentFlag.AlignCenter),
-                (display_stats["active"], Qt.AlignmentFlag.AlignCenter),
-                (display_stats["avg_lines_added"], Qt.AlignmentFlag.AlignCenter),
-                (display_stats["avg_pr_age"], Qt.AlignmentFlag.AlignCenter),
-                (display_stats["avg_time_to_merge"], Qt.AlignmentFlag.AlignCenter),
-                (display_stats["avg_time_since_comment"], Qt.AlignmentFlag.AlignCenter),
-                (display_stats["avg_commits"], Qt.AlignmentFlag.AlignCenter),
-            ]
+        # Disable sorting while updating
+        self.table.setSortingEnabled(False)
 
-            for col, (value, alignment) in enumerate(columns):
-                item = QTableWidgetItem()
-                # Store the actual value for sorting
-                item.setData(Qt.ItemDataRole.UserRole, value)
-                # Display formatted value
-                if isinstance(value, (int, float)):
-                    item.setText(f"{value:.1f}" if isinstance(value, float) else str(value))
-                else:
-                    item.setText(str(value))
-                item.setTextAlignment(alignment | Qt.AlignmentFlag.AlignVCenter)
-                self.table.setItem(row, col, item)
+        try:
+            # Update table row by row
+            for row_idx, user in enumerate(sorted_users):
+                user_stats = stats_by_user[user]
+                
+                total_prs = max(1, user_stats.total_prs)
+                total_merged = max(1, user_stats.total_merged_prs)
+                
+                # Create all items for this row
+                row_items = []
+                
+                # User column
+                user_item = QTableWidgetItem(user)
+                user_item.setData(Qt.ItemDataRole.UserRole, user)
+                user_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                row_items.append(user_item)
+                
+                # Stats columns with their values and formatting
+                stats_data = [
+                    (user_stats.created, False),
+                    (user_stats.merged, False),
+                    (user_stats.commented, False),
+                    (user_stats.active, False),
+                    (round(user_stats.total_lines_added / total_prs), False),
+                    (round(user_stats.total_pr_age.total_seconds() / (total_prs * SECONDS_PER_DAY), 1), True),
+                    (round(user_stats.total_time_to_merge.total_seconds() / (total_merged * SECONDS_PER_DAY), 1), True),
+                    (round(user_stats.total_time_since_comment.total_seconds() / (total_prs * SECONDS_PER_DAY), 1), True),
+                    (round(user_stats.total_commits / total_prs, 1) if user_stats.total_commits > 0 else 0, True),
+                ]
+                
+                # Create items for stats columns
+                for value, is_float in stats_data:
+                    item = QTableWidgetItem()
+                    item.setData(Qt.ItemDataRole.UserRole, float(value))
+                    item.setText(f"{value:.1f}" if is_float else str(value))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+                    row_items.append(item)
+                
+                # Set all items for this row at once
+                for col, item in enumerate(row_items):
+                    self.table.setItem(row_idx, col, item)
 
-        # Update heatmap (all commenters)
+        finally:
+            # Re-enable sorting
+            self.table.setSortingEnabled(True)
+
+        # Update heatmap
         matrix, authors, commenters = self._calculate_comment_heatmap(selected_period_days)
         self._update_heatmap(matrix, authors, commenters)
 
@@ -580,6 +586,7 @@ class StatsDialog(QDialog):
 
         except Exception as e:
             print(f"Error initializing heatmap: {e}")
+            traceback.print_exc()
 
     def closeEvent(self, event):
         """Handle dialog close event"""
@@ -596,6 +603,7 @@ class StatsDialog(QDialog):
 
         except Exception as e:
             print(f"Error during stats dialog cleanup: {e}")
+            traceback.print_exc()
         finally:
             # Accept the close event
             event.accept()
