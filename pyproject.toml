@@ -9,7 +9,7 @@ packages = [{include = "github_pr_watcher"}]
 license = "AGPL-3.0-or-later"
 
 [tool.poetry.dependencies]
-python = ">=3.10, <=3.14"
+python = ">=3.11, <=3.14"
 PyQt6 = "^6.6.1"
 requests = "^2.31.0"
 tomli = "^2.0.1"
